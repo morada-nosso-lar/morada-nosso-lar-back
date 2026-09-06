@@ -1,24 +1,50 @@
-# ⚙️ Morada Nosso Lar — API Backend
+# 🏢 Morada Nosso Lar - Backend de Autenticação (Next.js)
 
-Repositório destinado ao desenvolvimento da API e regras de negócio do sistema **Morada Nosso Lar**.
-
----
-
-## 🚧 Status: Arquitetura em Definição
-
-As tecnologias base deste repositório (Linguagem, Framework e Banco de Dados) ainda estão em fase de avaliação pelo grupo. 
-
-**Algumas tecnologias no nosso radar:**
-* **Linguagem / Framework:** *A definir (ex: Node.js com Express, Java com Spring Boot, etc.)*
-* **Banco de Dados:** *A definir (ex: PostgreSQL, MySQL, etc.)*
+Backend robusto e seguro de autenticação construído com **Next.js (App Router Route Handlers)**, **Bcrypt**, **JWT (JSON Web Tokens)**, **Zod** e **Cookies HttpOnly**.
 
 ---
 
-## 📌 Escopo e Regras de Negócio Previstas
+## 🚀 Como Executar o Projeto
 
-A API será responsável por fornecer a inteligência do sistema, incluindo:
-* Gerenciar a autenticação e permissões dos cuidadores.
-* Fornecer endpoints RESTful para o controle de cadastro de pacientes e inventário de suprimentos/medicamentos.
-* **Motor de Notificação:** Monitorar os itens e, sempre que o estoque de um paciente atingir `quantidade <= 3`, disparar um alerta/e-mail automático para a equipe.
+### 1. Instalar as dependências:
+```bash
+npm install
+```
 
-*(As instruções de instalação, dependências e execução local serão adicionadas aqui assim que a arquitetura for definida).*
+### 2. Configurar variáveis de ambiente:
+O arquivo `.env.local` já está configurado por padrão. Caso queira personalizar, use o modelo `.env.example`:
+```bash
+JWT_SECRET="sua_chave_secreta_aqui"
+JWT_EXPIRES_IN="7d"
+NODE_ENV="development"
+```
+
+### 3. Iniciar o servidor de desenvolvimento:
+```bash
+npm run dev
+```
+O servidor estará rodando em [http://localhost:3000](http://localhost:3000).
+
+### 4. Executar os testes automatizados da API:
+Com o servidor rodando em outro terminal, execute:
+```bash
+npm run test:auth
+```
+
+---
+
+## 📡 Endpoints da API
+
+| Método | Rota | Descrição | Protegido? |
+| :--- | :--- | :--- | :---: |
+| `POST` | `/api/auth/register` | Cria uma nova conta com senha em hash Bcrypt | Não |
+| `POST` | `/api/auth/login` | Autentica o usuário e emite Cookie HttpOnly + Token JWT | Não |
+| `GET` | `/api/auth/me` | Retorna os dados do usuário autenticado | **Sim** |
+| `POST` | `/api/auth/logout` | Encerra a sessão e apaga o cookie HttpOnly | Não |
+
+---
+
+## 📖 Documentação Detalhada
+
+Para uma explicação didática sobre o que cada biblioteca faz (Bcrypt, JWT, Zod, Route Handlers, Cookies HttpOnly):
+👉 Consulte o arquivo [DOCS_AUTENTICACAO.md](./DOCS_AUTENTICACAO.md).
