@@ -1,0 +1,116 @@
+{
+  "info": {
+    "_postman_id": "morada-nosso-lar-auth-collection",
+    "name": "Morada Nosso Lar - Autenticação API",
+    "description": "Collection completa para teste dos endpoints de autenticação do backend Next.js.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Cadastro de Usuário (Register)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Cauê Valente\",\n  \"email\": \"caue@moradanossolar.com.br\",\n  \"password\": \"SenhaSegura@2026\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/auth/register",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "auth", "register"]
+        },
+        "description": "Cadastra um novo usuário criptografando a senha com Bcrypt (10 rounds)."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Login de Usuário (Login)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.token) {",
+              "    pm.environment.set(\"jwt_token\", jsonData.token);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"caue@moradanossolar.com.br\",\n  \"password\": \"SenhaSegura@2026\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/api/auth/login",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "auth", "login"]
+        },
+        "description": "Autentica o usuário, emite o Token JWT e seta o Cookie HttpOnly."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Perfil do Usuário Autenticado (/me - Bearer Token)",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{jwt_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/api/auth/me",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "auth", "me"]
+        },
+        "description": "Recupera dados do usuário autenticado a partir do token JWT."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Logout (Encerrar Sessão)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/api/auth/logout",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["api", "auth", "logout"]
+        },
+        "description": "Limpa o cookie HttpOnly e finaliza a sessão."
+      },
+      "response": []
+    }
+  ]
+}
