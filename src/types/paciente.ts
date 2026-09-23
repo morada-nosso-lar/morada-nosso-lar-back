@@ -4,31 +4,36 @@
  * ==============================================================================
  *
  * Define a estrutura de dados do Paciente em diferentes contextos:
- * - Paciente: registro completo vindo do banco de dados (Supabase)
+ * - Paciente: registro completo vindo do banco de dados (Neon/TypeORM)
  * - CreatePacienteInput: dados enviados pelo cliente ao cadastrar
  * - UpdatePacienteInput: dados enviados pelo cliente ao editar (parcial)
+ *
+ * NOTA: Os campos usam camelCase no TypeScript. O TypeORM cuida do mapeamento
+ * para snake_case nas colunas do banco de dados automaticamente via entidades.
  */
 
 /**
- * Representa a estrutura completa do Paciente no banco de dados Supabase.
- * Corresponde à tabela `pacientes`.
+ * Representa a estrutura completa do Paciente retornada pelas APIs.
+ * Corresponde à entidade `Paciente` do TypeORM (tabela `pacientes`).
+ *
+ * NOTA: O `id` agora é um número inteiro auto-incrementado.
  */
 export interface Paciente {
-  id: string;                    // UUID gerado automaticamente pelo Supabase
-  nome_completo: string;         // Nome completo do paciente (obrigatório)
-  data_nascimento: string;       // Data de nascimento no formato ISO (YYYY-MM-DD)
-  observacoes_medicas: string | null; // Observações médicas (opcional)
-  created_at: string;            // Timestamp de criação (ISO 8601)
-  updated_at: string;            // Timestamp da última atualização (ISO 8601)
+  id: number;                        // Inteiro auto-increment
+  nomeCompleto: string;              // Nome completo do paciente (obrigatório)
+  dataNascimento: string;            // Data de nascimento no formato ISO (YYYY-MM-DD)
+  observacoesMedicas: string | null; // Observações médicas (opcional)
+  createdAt: Date;                   // Timestamp de criação
+  updatedAt: Date;                   // Timestamp da última atualização
 }
 
 /**
  * Dados necessários para criar um novo paciente.
  */
 export interface CreatePacienteInput {
-  nome_completo: string;
-  data_nascimento: string;
-  observacoes_medicas?: string | null;
+  nomeCompleto: string;
+  dataNascimento: string;
+  observacoesMedicas?: string | null;
 }
 
 /**
@@ -36,9 +41,9 @@ export interface CreatePacienteInput {
  * Todos os campos são opcionais (atualização parcial).
  */
 export interface UpdatePacienteInput {
-  nome_completo?: string;
-  data_nascimento?: string;
-  observacoes_medicas?: string | null;
+  nomeCompleto?: string;
+  dataNascimento?: string;
+  observacoesMedicas?: string | null;
 }
 
 /**

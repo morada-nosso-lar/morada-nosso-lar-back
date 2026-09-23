@@ -15,13 +15,14 @@
  *   O POST utiliza Zod (createPacienteSchema) para validar os dados de entrada.
  *
  * BANCO DE DADOS:
- *   Supabase (tabela `pacientes`).
+ *   Neon PostgreSQL via TypeORM (entidade Paciente).
  */
 
 import { NextRequest } from 'next/server';
-import supabase from '@/lib/supabase';
 import { getAuthenticatedUserFromRequest } from '@/lib/auth/session';
 import { createPacienteSchema } from '@/lib/validations/paciente';
+import { getDataSource } from '@/lib/database/data-source';
+import { Paciente } from '@/lib/database/entities/Paciente';
 
 /**
  * GET /api/pacientes
@@ -37,25 +38,27 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // 2. Busca todos os pacientes no Supabase
-  const { data, error } = await supabase
-    .from('pacientes')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    // 2. Busca todos os pacientes via TypeORM
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Paciente);
 
-  if (error) {
+    const pacientes = await repo.find({
+      order: { createdAt: 'DESC' },
+    });
+
+    return Response.json({
+      success: true,
+      message: `${pacientes.length} paciente(s) encontrado(s).`,
+      data: pacientes,
+    });
+  } catch (error) {
     console.error('[GET /api/pacientes] Erro ao buscar pacientes:', error);
     return Response.json(
       { success: false, error: 'Erro interno ao buscar pacientes.' },
       { status: 500 }
     );
   }
-
-  return Response.json({
-    success: true,
-    message: `${data.length} paciente(s) encontrado(s).`,
-    data,
-  });
 }
 
 /**
@@ -102,33 +105,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. Insere no Supabase
-  const { nome_completo, data_nascimento, observacoes_medicas } = result.data;
+  try {
+    // 3. Insere via TypeORM
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Paciente);
 
-  const { data, error } = await supabase
-    .from('pacientes')
-    .insert({
-      nome_completo,
-      data_nascimento,
-      observacoes_medicas: observacoes_medicas ?? null,
-    })
-    .select()
-    .single();
+    const newPaciente = repo.create({
+      nomeCompleto: result.data.nome_completo,
+      dataNascimento: result.data.data_nascimento,
+      observacoesMedicas: result.data.observacoes_medicas ?? null,
+    });
 
-  if (error) {
+    const saved = await repo.save(newPaciente);
+
+    return Response.json(
+      {
+        success: true,
+        message: 'Paciente cadastrado com sucesso!',
+        data: saved,
+      },
+      { status: 201 }
+    );
+  } catch (error) {
     console.error('[POST /api/pacientes] Erro ao cadastrar paciente:', error);
     return Response.json(
       { success: false, error: 'Erro interno ao cadastrar paciente.' },
       { status: 500 }
     );
   }
-
-  return Response.json(
-    {
-      success: true,
-      message: 'Paciente cadastrado com sucesso!',
-      data,
-    },
-    { status: 201 }
-  );
 }

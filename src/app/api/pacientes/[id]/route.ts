@@ -13,17 +13,30 @@
  *   Todos os endpoints exigem autenticação via JWT.
  *
  * PARÂMETRO DINÂMICO:
- *   [id] — UUID do paciente (passado via URL).
+ *   [id] — Número inteiro (ID auto-increment) do paciente (passado via URL).
  *   No Next.js 16+, o `params` é uma Promise que deve ser await.
  */
 
 import { NextRequest } from 'next/server';
-import supabase from '@/lib/supabase';
 import { getAuthenticatedUserFromRequest } from '@/lib/auth/session';
 import { updatePacienteSchema } from '@/lib/validations/paciente';
+import { getDataSource } from '@/lib/database/data-source';
+import { Paciente } from '@/lib/database/entities/Paciente';
 
 // Tipo do contexto de rota com parâmetro dinâmico [id]
 type RouteContext = { params: Promise<{ id: string }> };
+
+/**
+ * Valida e converte o parâmetro `id` de string para número inteiro.
+ * Retorna o número ou null se inválido.
+ */
+function parseIntId(id: string): number | null {
+  const parsed = parseInt(id, 10);
+  if (isNaN(parsed) || parsed <= 0 || String(parsed) !== id) {
+    return null;
+  }
+  return parsed;
+}
 
 /**
  * GET /api/pacientes/:id
@@ -39,37 +52,43 @@ export async function GET(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 2. Extrai o ID da URL (params é Promise no Next.js 16+)
+  // 2. Extrai e valida o ID da URL (params é Promise no Next.js 16+)
   const { id } = await context.params;
+  const numericId = parseIntId(id);
 
-  // 3. Valida formato do UUID
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(id)) {
+  if (numericId === null) {
     return Response.json(
-      { success: false, error: 'ID inválido. Esperado formato UUID.' },
+      { success: false, error: 'ID inválido. Esperado um número inteiro positivo.' },
       { status: 400 }
     );
   }
 
-  // 4. Busca o paciente no Supabase
-  const { data, error } = await supabase
-    .from('pacientes')
-    .select('*')
-    .eq('id', id)
-    .single();
+  try {
+    // 3. Busca o paciente via TypeORM
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Paciente);
 
-  if (error || !data) {
+    const paciente = await repo.findOneBy({ id: numericId });
+
+    if (!paciente) {
+      return Response.json(
+        { success: false, error: 'Paciente não encontrado.' },
+        { status: 404 }
+      );
+    }
+
+    return Response.json({
+      success: true,
+      message: 'Paciente encontrado.',
+      data: paciente,
+    });
+  } catch (error) {
+    console.error('[GET /api/pacientes/:id] Erro:', error);
     return Response.json(
-      { success: false, error: 'Paciente não encontrado.' },
-      { status: 404 }
+      { success: false, error: 'Erro interno ao buscar paciente.' },
+      { status: 500 }
     );
   }
-
-  return Response.json({
-    success: true,
-    message: 'Paciente encontrado.',
-    data,
-  });
 }
 
 /**
@@ -93,13 +112,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 2. Extrai o ID da URL
+  // 2. Extrai e valida o ID da URL
   const { id } = await context.params;
+  const numericId = parseIntId(id);
 
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(id)) {
+  if (numericId === null) {
     return Response.json(
-      { success: false, error: 'ID inválido. Esperado formato UUID.' },
+      { success: false, error: 'ID inválido. Esperado um número inteiro positivo.' },
       { status: 400 }
     );
   }
@@ -127,44 +146,46 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 4. Verifica se o paciente existe
-  const { data: existing, error: findError } = await supabase
-    .from('pacientes')
-    .select('id')
-    .eq('id', id)
-    .single();
+  try {
+    // 4. Verifica se o paciente existe
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Paciente);
 
-  if (findError || !existing) {
-    return Response.json(
-      { success: false, error: 'Paciente não encontrado.' },
-      { status: 404 }
-    );
-  }
+    const existing = await repo.findOneBy({ id: numericId });
 
-  // 5. Atualiza no Supabase (inclui updated_at)
-  const { data, error } = await supabase
-    .from('pacientes')
-    .update({
-      ...result.data,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .select()
-    .single();
+    if (!existing) {
+      return Response.json(
+        { success: false, error: 'Paciente não encontrado.' },
+        { status: 404 }
+      );
+    }
 
-  if (error) {
+    // 5. Aplica as atualizações (mapeando snake_case do Zod → camelCase da entidade)
+    const updateData = result.data;
+    if (updateData.nome_completo !== undefined) {
+      existing.nomeCompleto = updateData.nome_completo;
+    }
+    if (updateData.data_nascimento !== undefined) {
+      existing.dataNascimento = updateData.data_nascimento;
+    }
+    if (updateData.observacoes_medicas !== undefined) {
+      existing.observacoesMedicas = updateData.observacoes_medicas ?? null;
+    }
+
+    const updated = await repo.save(existing);
+
+    return Response.json({
+      success: true,
+      message: 'Paciente atualizado com sucesso!',
+      data: updated,
+    });
+  } catch (error) {
     console.error('[PUT /api/pacientes/:id] Erro ao atualizar paciente:', error);
     return Response.json(
       { success: false, error: 'Erro interno ao atualizar paciente.' },
       { status: 500 }
     );
   }
-
-  return Response.json({
-    success: true,
-    message: 'Paciente atualizado com sucesso!',
-    data,
-  });
 }
 
 /**
@@ -182,47 +203,43 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     );
   }
 
-  // 2. Extrai o ID da URL
+  // 2. Extrai e valida o ID da URL
   const { id } = await context.params;
+  const numericId = parseIntId(id);
 
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(id)) {
+  if (numericId === null) {
     return Response.json(
-      { success: false, error: 'ID inválido. Esperado formato UUID.' },
+      { success: false, error: 'ID inválido. Esperado um número inteiro positivo.' },
       { status: 400 }
     );
   }
 
-  // 3. Verifica se o paciente existe
-  const { data: existing, error: findError } = await supabase
-    .from('pacientes')
-    .select('id, nome_completo')
-    .eq('id', id)
-    .single();
+  try {
+    // 3. Verifica se o paciente existe
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Paciente);
 
-  if (findError || !existing) {
-    return Response.json(
-      { success: false, error: 'Paciente não encontrado.' },
-      { status: 404 }
-    );
-  }
+    const existing = await repo.findOneBy({ id: numericId });
 
-  // 4. Remove do Supabase
-  const { error } = await supabase
-    .from('pacientes')
-    .delete()
-    .eq('id', id);
+    if (!existing) {
+      return Response.json(
+        { success: false, error: 'Paciente não encontrado.' },
+        { status: 404 }
+      );
+    }
 
-  if (error) {
+    // 4. Remove do banco
+    await repo.remove(existing);
+
+    return Response.json({
+      success: true,
+      message: `Paciente "${existing.nomeCompleto}" excluído com sucesso.`,
+    });
+  } catch (error) {
     console.error('[DELETE /api/pacientes/:id] Erro ao excluir paciente:', error);
     return Response.json(
       { success: false, error: 'Erro interno ao excluir paciente.' },
       { status: 500 }
     );
   }
-
-  return Response.json({
-    success: true,
-    message: `Paciente "${existing.nome_completo}" excluído com sucesso.`,
-  });
 }

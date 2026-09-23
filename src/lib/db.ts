@@ -1,6 +1,6 @@
 /**
  * ==============================================================================
- * CAMADA DE PERSISTÊNCIA / BANCO DE DADOS EM MEMÓRIA (src/lib/db.ts)
+ * CAMADA DE PERSISTÊNCIA — TYPEORM + NEON POSTGRES (src/lib/db.ts)
  * ==============================================================================
  * 
  * PADRÃO REPOSITÓRIO (Repository Pattern):
@@ -9,113 +9,106 @@
  * VANTAGENS DESTA ABORDAGEM:
  * 1. O restante do backend (rotas de API, regras de negócio) NÃO precisa saber 
  *    qual banco de dados está por trás.
- * 2. Quando você quiser plugar o PostgreSQL, MySQL, MongoDB ou um ORM (Prisma / Drizzle),
- *    basta substituir o código interno dessas funções sem quebrar nenhuma rota!
+ * 2. As rotas continuam usando `userRepository.findByEmail(email)` da mesma forma,
+ *    mas agora os dados são persistidos no Neon PostgreSQL via TypeORM.
  * 
- * ESTADO EM MEMÓRIA:
- * Usamos uma lista `Map` em memória inicializada com um usuário de teste.
- * (Nota: Em desenvolvimento no Next.js com hot-reload, usamos `globalThis` para 
- * preservar os dados entre recarregamentos).
+ * MIGRAÇÃO:
+ * Este arquivo foi migrado de Supabase SDK para TypeORM.
+ * A interface pública (userRepository + sanitizeUser) permanece idêntica.
  */
 
-import { User, SafeUser } from '@/types/auth';
+import { User as UserType, SafeUser } from '@/types/auth';
+import { getDataSource } from '@/lib/database/data-source';
+import { User } from '@/lib/database/entities/User';
 
-// Declaração global para persistir o Map em memória durante o hot-reload do Next.js
-const globalForDb = globalThis as unknown as {
-  usersDatabase?: Map<string, User>;
-};
+/**
+ * Obtém o repositório TypeORM da entidade User.
+ * Inicializa a conexão sob demanda (lazy) se ainda não estiver ativa.
+ */
+async function getUserRepo() {
+  const ds = await getDataSource();
+  return ds.getRepository(User);
+}
 
-// Inicializa a base de dados de usuários
-const usersDatabase: Map<string, User> =
-  globalForDb.usersDatabase || new Map<string, User>();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForDb.usersDatabase = usersDatabase;
+/**
+ * Converte uma entidade TypeORM User para a interface UserType (tipos da aplicação).
+ * Como a entidade já usa camelCase, a conversão é direta.
+ */
+function entityToUser(entity: User): UserType {
+  return {
+    id: entity.id,
+    name: entity.name,
+    email: entity.email,
+    passwordHash: entity.passwordHash,
+    createdAt: entity.createdAt,
+    updatedAt: entity.updatedAt,
+  };
 }
 
 /**
  * Remove dados sensíveis (como passwordHash) do objeto de Usuário
  * antes de enviá-lo como resposta para o cliente.
  */
-export function sanitizeUser(user: User): SafeUser {
+export function sanitizeUser(user: UserType): SafeUser {
   const { passwordHash: _discarded, ...safeUser } = user;
   return safeUser;
 }
 
-/**
- * Insere um usuário inicial de teste caso a base esteja vazia.
- * Email: admin@moradanossolar.com.br
- * Senha pura de teste: "Senha@123456"
- * Hash Bcrypt gerado: "$2a$10$7vNqv2KxO96L/lHwI4hZ.uG6y68d4y1Y5n19yY6b7G5r14H2tKq.G" (ou similar)
- */
-function seedInitialUsers() {
-  if (usersDatabase.size === 0) {
-    const defaultUser: User = {
-      id: 'usr_demo_123456',
-      name: 'Administrador Morada Nosso Lar',
-      email: 'admin@moradanossolar.com.br',
-      // Hash da senha "Senha@123456" com bcrypt (10 rounds)
-      passwordHash: '$2a$10$1Y5i/oD0bC5qB3Pz7d8i7eC2r7DkE9iF0gH1jK2lM3nO4pQ5rS6tU',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    usersDatabase.set(defaultUser.id, defaultUser);
-  }
-}
+// ---------------------------------------------------------------------------
+// Repositório de Usuários (UserRepository) — agora com TypeORM
+// ---------------------------------------------------------------------------
 
-// Executa a carga inicial
-seedInitialUsers();
-
-/**
- * Repositório de Usuários (UserRepository)
- */
 export const userRepository = {
   /**
-   * Busca um usuário pelo endereço de e-mail (usado no Login e na verificação de cadastro)
+   * Busca um usuário pelo endereço de e-mail (usado no Login e na verificação de cadastro).
    */
-  async findByEmail(email: string): Promise<User | null> {
+  async findByEmail(email: string): Promise<UserType | null> {
+    const repo = await getUserRepo();
     const normalizedEmail = email.toLowerCase().trim();
-    for (const user of usersDatabase.values()) {
-      if (user.email.toLowerCase() === normalizedEmail) {
-        return user;
-      }
-    }
-    return null;
+
+    const user = await repo.findOneBy({ email: normalizedEmail });
+
+    if (!user) return null;
+    return entityToUser(user);
   },
 
   /**
-   * Busca um usuário pelo ID único (usado na rota protegida /api/auth/me)
+   * Busca um usuário pelo ID único (usado na rota protegida /api/auth/me).
+   * Agora recebe um `number` (inteiro auto-increment).
    */
-  async findById(id: string): Promise<User | null> {
-    const user = usersDatabase.get(id);
-    return user || null;
+  async findById(id: number): Promise<UserType | null> {
+    const repo = await getUserRepo();
+
+    const user = await repo.findOneBy({ id });
+
+    if (!user) return null;
+    return entityToUser(user);
   },
 
   /**
-   * Cria e salva um novo usuário na base de dados
+   * Cria e salva um novo usuário na base de dados.
+   * O TypeORM gera o ID inteiro automaticamente via SERIAL/auto-increment.
    */
-  async create(data: { name: string; email: string; passwordHash: string }): Promise<User> {
-    // Gera um identificador único para o usuário (ex: usr_timestamp_random)
-    const id = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const now = new Date();
+  async create(data: { name: string; email: string; passwordHash: string }): Promise<UserType> {
+    const repo = await getUserRepo();
 
-    const newUser: User = {
-      id,
+    const newUser = repo.create({
       name: data.name.trim(),
       email: data.email.toLowerCase().trim(),
       passwordHash: data.passwordHash,
-      createdAt: now,
-      updatedAt: now,
-    };
+    });
 
-    usersDatabase.set(newUser.id, newUser);
-    return newUser;
+    const saved = await repo.save(newUser);
+    return entityToUser(saved);
   },
 
   /**
-   * Lista todos os usuários cadastrados (para fins de depuração/testes)
+   * Lista todos os usuários cadastrados (para fins de depuração/testes).
    */
   async listAll(): Promise<SafeUser[]> {
-    return Array.from(usersDatabase.values()).map(sanitizeUser);
+    const repo = await getUserRepo();
+
+    const users = await repo.find({ order: { createdAt: 'DESC' } });
+    return users.map(entityToUser).map(sanitizeUser);
   },
 };

@@ -11,9 +11,11 @@
  * Representa a estrutura completa do Usuário no banco de dados.
  * ATENÇÃO: Contém o campo `passwordHash`, que NUNCA deve ser enviado
  * nas respostas de API para o frontend/cliente.
+ *
+ * NOTA: O `id` agora é um número inteiro auto-incrementado (SERIAL).
  */
 export interface User {
-  id: string;             // Identificador único do usuário (UUID ou string única)
+  id: number;             // Identificador único do usuário (inteiro auto-increment)
   name: string;           // Nome completo ou apelido do usuário
   email: string;          // E-mail único usado para login
   passwordHash: string;   // Senha criptografada (hash gerado pelo Bcrypt)
@@ -39,7 +41,7 @@ export type SafeUser = Omit<User, 'passwordHash'>;
  * garante que ele não foi forjado.
  */
 export interface JWTPayload {
-  userId: string;         // ID do usuário para identificar quem está autenticado
+  userId: number;         // ID do usuário para identificar quem está autenticado
   email: string;          // E-mail do usuário para conferência rápida
   iat?: number;           // "Issued At" (timestamp de quando o token foi gerado)
   exp?: number;           // "Expiration Time" (timestamp de quando o token expira)
