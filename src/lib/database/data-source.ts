@@ -19,6 +19,8 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import ws from 'ws';
 import { User } from './entities/User';
 import { Paciente } from './entities/Paciente';
+import { Produto } from './entities/Produto';
+import { AlertaEstoque } from './entities/AlertaEstoque';
 
 // Configura o Neon para usar WebSocket nativo do Node.js
 neonConfig.webSocketConstructor = ws;
@@ -45,7 +47,7 @@ function createDataSource(): DataSource {
     url: databaseUrl,
     ssl: true,
     driver: require('@neondatabase/serverless'),
-    entities: [User, Paciente],
+    entities: [User, Paciente, Produto, AlertaEstoque],
     synchronize: true,
     logging: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : false,
     connectTimeoutMS: 15000,
