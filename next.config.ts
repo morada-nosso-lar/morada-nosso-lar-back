@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
           { key: "Access-Control-Allow-Credentials", value: "true" },
           // Permite explicitamente a origem do teu front-end Vite
           // Como deve ficar
-{ key: "Access-Control-Allow-Origin", value: process.env.FRONTEND_URL || "http://localhost:5173" },
+          { key: "Access-Control-Allow-Origin", value: process.env.FRONTEND_URL || "http://localhost:5173" },
           // Permite os métodos necessários para o CRUD
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
           // Permite os cabeçalhos que o Axios costuma enviar (incluindo o Token)
