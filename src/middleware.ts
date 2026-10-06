@@ -1,17 +1,11 @@
 /**
  * ==============================================================================
- * MIDDLEWARE DE AUTENTICAÇÃO DO NEXT.JS (src/middleware.ts)
+ * MIDDLEWARE DO NEXT.JS (src/middleware.ts)
  * ==============================================================================
  * 
- * O QUE É O MIDDLEWARE DO NEXT.JS?
- * O middleware é executado ANTES de qualquer requisição ser completada.
- * Ele permite interceptar requisições, verificar cookies/headers e redirecionar
- * ou bloquear o acesso a rotas privadas.
- * 
- * NOTA SOBRE EDGE RUNTIME:
- * O middleware do Next.js roda no ambiente Edge. 
- * Para verificar tokens aqui sem bibliotecas pesadas de Node.js, verificamos
- * a presença do cookie ou usamos utilitários leves como 'jose' se necessário.
+ * OBJETIVO:
+ * 1. Gerenciar o CORS de forma dinâmica (permitindo localhost e Vercel).
+ * 2. Proteger rotas privadas interceptando requisições sem autenticação.
  */
 
 import { NextResponse } from 'next/server';
@@ -23,31 +17,65 @@ const protectedRoutes = ['/dashboard', '/perfil', '/admin'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const origin = request.headers.get('origin') || '';
 
-  // Verifica se a rota atual faz parte das rotas protegidas
+  // 1. Configuração dinâmica de CORS para aceitar Localhost e Produção
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://morada-nosso-lar-front.vercel.app',
+    process.env.FRONTEND_URL || ''
+  ].filter(Boolean);
+
+  const isAllowedOrigin = allowedOrigins.includes(origin);
+  const corsOrigin = isAllowedOrigin ? origin : 'https://morada-nosso-lar-front.vercel.app';
+
+  // 2. Se for uma requisição OPTIONS (Preflight do CORS), responde imediatamente
+  if (request.method === 'OPTIONS') {
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': corsOrigin,
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
+        'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization',
+      },
+    });
+  }
+
+  // 3. Verificação de Rotas Protegidas
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
 
   if (isProtectedRoute) {
     const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
-    // Se não houver token no cookie, bloqueia ou redireciona
     if (!token) {
-      // Para requisições de API, retorna JSON 401
+      // Para requisições de API protegidas, retorna JSON 401
       if (pathname.startsWith('/api/')) {
-        return NextResponse.json(
+        const response = NextResponse.json(
           { success: false, error: 'Acesso negado. Faça login para continuar.' },
           { status: 401 }
         );
+        response.headers.set('Access-Control-Allow-Origin', corsOrigin);
+        response.headers.set('Access-Control-Allow-Credentials', 'true');
+        return response;
       }
 
-      // Para páginas web normais, redirecionaria para a página de login
+      // Para páginas web normais, redireciona para a página de login
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('redirect', pathname);
       return NextResponse.redirect(loginUrl);
     }
   }
 
-  return NextResponse.next();
+  // 4. Prossegue a requisição injetando os cabeçalhos de CORS necessários
+  const response = NextResponse.next();
+  response.headers.set('Access-Control-Allow-Origin', corsOrigin);
+  response.headers.set('Access-Control-Allow-Credentials', 'true');
+  response.headers.set('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  response.headers.set('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
+
+  return response;
 }
 
 /**
