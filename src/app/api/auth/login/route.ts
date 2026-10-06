@@ -23,6 +23,11 @@ import { userRepository, sanitizeUser } from '@/lib/db';
 import { setAuthCookie } from '@/lib/auth/session';
 import { AuthResponse, ApiErrorResponse } from '@/types/auth';
 
+// Adicionado para responder corretamente às requisições de verificação prévia (Preflight/CORS) do navegador
+export async function OPTIONS() {
+  return NextResponse.json({}, { status: 200 });
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse<AuthResponse | ApiErrorResponse>> {
   try {
     // 1. Tenta ler o corpo (JSON) da requisição
