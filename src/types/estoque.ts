@@ -3,12 +3,14 @@
  * TIPOS E INTERFACES DE ESTOQUE (src/types/estoque.ts)
  * ==============================================================================
  *
- * Define a estrutura de dados dos Produtos/Suprimentos e Alertas de Estoque
- * em diferentes contextos:
- * - Produto: registro completo vindo do banco de dados (Neon/TypeORM)
- * - AlertaEstoque: registro de alerta de estoque baixo
- * - CreateProdutoInput: dados enviados pelo cliente ao cadastrar
- * - UpdateProdutoInput: dados enviados pelo cliente ao editar (parcial)
+ * Define a estrutura de dados dos Produtos/Suprimentos, Alertas de Estoque
+ * e LOGs de auditoria em diferentes contextos.
+ *
+ * ALTERAÇÕES DA SPRINT 04:
+ *   - Adicionado campo `pacienteId` ao Produto (vínculo com paciente)
+ *   - Adicionada interface LogEstoque para auditoria
+ *   - Adicionada interface Notificacao para equipe de enfermagem
+ *   - Adicionada interface Configuracao para settings do sistema
  *
  * NOTA: Os campos usam camelCase no TypeScript. O TypeORM cuida do mapeamento
  * para snake_case nas colunas do banco de dados automaticamente via entidades.
@@ -19,13 +21,14 @@
  * Corresponde à entidade `Produto` do TypeORM (tabela `produtos`).
  */
 export interface Produto {
-  id: number;                // Inteiro auto-increment
-  nome: string;              // Nome do produto/suprimento (obrigatório)
-  categoria: string;         // Categoria do produto (obrigatório)
-  quantidade: number;        // Quantidade disponível em estoque
-  descricao: string | null;  // Descrição adicional (opcional)
-  createdAt: Date;           // Timestamp de criação
-  updatedAt: Date;           // Timestamp da última atualização
+  id: number;                 // Inteiro auto-increment
+  nome: string;               // Nome do produto/suprimento (obrigatório)
+  categoria: string;          // Categoria do produto (lista pré-definida)
+  quantidade: number;         // Quantidade disponível em estoque
+  descricao: string | null;   // Descrição adicional (opcional)
+  pacienteId: number | null;  // ID do paciente vinculado (null = estoque geral)
+  createdAt: Date;            // Timestamp de criação
+  updatedAt: Date;            // Timestamp da última atualização
 }
 
 /**
@@ -36,11 +39,13 @@ export interface CreateProdutoInput {
   categoria: string;
   quantidade: number;
   descricao?: string | null;
+  pacienteId?: number | null;
 }
 
 /**
  * Dados aceitos para atualizar um produto existente.
  * Todos os campos são opcionais (atualização parcial).
+ * NOTA: paciente_id NÃO pode ser alterado (não pode trocar dono).
  */
 export interface UpdateProdutoInput {
   nome?: string;
@@ -56,11 +61,60 @@ export interface UpdateProdutoInput {
 export interface AlertaEstoque {
   id: number;
   produtoId: number;
-  produtoNome: string;       // Nome do produto no momento do alerta (snapshot)
-  quantidade: number;        // Quantidade no momento do alerta
-  mensagem: string;          // Mensagem descritiva do alerta
-  lido: boolean;             // Se o alerta já foi visualizado/resolvido
+  produtoNome: string;        // Nome do produto no momento do alerta (snapshot)
+  quantidade: number;         // Quantidade no momento do alerta
+  mensagem: string;           // Mensagem descritiva do alerta
+  lido: boolean;              // Se o alerta já foi visualizado/resolvido
   createdAt: Date;
+}
+
+/**
+ * Representa um LOG de auditoria de operações no estoque.
+ * Gerado automaticamente a cada criação, edição ou exclusão de produto.
+ *
+ * REGRA DE NEGÓCIO (Sprint 04):
+ *   "Sempre que falamos em edição em sistemas de estoque também falamos
+ *    em criação de LOGs para saber que editou."
+ */
+export interface LogEstoque {
+  id: number;
+  produtoId: number;           // ID do produto afetado
+  pacienteId: number | null;   // ID do paciente relacionado (se aplicável)
+  usuarioId: number;           // ID do usuário que fez a ação
+  usuarioNome: string;         // Nome do usuário (snapshot)
+  acao: string;                // Tipo de ação (CRIACAO, ATUALIZACAO_QTD, etc.)
+  campoAlterado: string | null; // Campo alterado (ex: 'quantidade', 'nome')
+  valorAnterior: string | null; // Valor antes da alteração
+  valorNovo: string | null;     // Valor após a alteração
+  descricao: string;           // Descrição legível da ação
+  createdAt: Date;
+}
+
+/**
+ * Representa uma notificação para a equipe de enfermagem.
+ */
+export interface Notificacao {
+  id: number;
+  tipo: string;                     // Tipo da notificação (ESTOQUE_BAIXO, PACIENTE_DESATIVADO, etc.)
+  titulo: string;                   // Título resumido
+  mensagem: string;                 // Mensagem completa
+  destinatarioId: number | null;    // ID do destinatário (null = broadcast)
+  referenciaTipo: string | null;    // Tipo da entidade referenciada
+  referenciaId: number | null;      // ID da entidade referenciada
+  lida: boolean;                    // Se já foi lida
+  createdAt: Date;
+}
+
+/**
+ * Representa uma configuração do sistema (chave-valor).
+ */
+export interface Configuracao {
+  id: number;
+  chave: string;               // Chave única da configuração
+  valor: string;               // Valor da configuração (string)
+  descricao: string | null;    // Descrição do propósito
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
@@ -79,4 +133,13 @@ export interface AlertaApiResponse {
   success: boolean;
   message: string;
   data?: AlertaEstoque | AlertaEstoque[];
+}
+
+/**
+ * Estrutura padrão de resposta da API de logs de estoque.
+ */
+export interface LogApiResponse {
+  success: boolean;
+  message: string;
+  data?: LogEstoque | LogEstoque[];
 }

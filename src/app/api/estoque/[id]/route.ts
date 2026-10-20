@@ -6,8 +6,18 @@
  *
  * Endpoints:
  *   GET    /api/estoque/:id  → Retorna os dados de um produto específico
- *   PUT    /api/estoque/:id  → Atualiza os dados de um produto (inclui quantidade)
+ *   PUT    /api/estoque/:id  → Atualiza os dados de um produto (com LOGs de auditoria)
  *   DELETE /api/estoque/:id  → Remove um produto do estoque
+ *
+ * ALTERAÇÕES DA SPRINT 04:
+ *   1. "Não é possível editar um item cadastrado para um paciente"
+ *      → Itens vinculados a pacientes (paciente_id != null) são IMUTÁVEIS.
+ *      O PUT retorna 403 se o produto estiver vinculado a um paciente.
+ *   2. "Sempre que falamos em edição em sistemas de estoque também falamos
+ *      em criação de LOGs para saber que editou"
+ *      → Toda alteração gera um registro na tabela `logs_estoque` com:
+ *        quem editou, o que foi alterado, valor anterior e valor novo.
+ *   3. Verificação de paciente ativo antes de permitir movimentações
  *
  * AUTENTICAÇÃO:
  *   Todos os endpoints exigem autenticação via JWT.
@@ -19,10 +29,9 @@
  * ALERTA AUTOMÁTICO (PUT):
  *   Ao atualizar a quantidade de um produto para ≤ 2 unidades,
  *   um alerta é gerado automaticamente na tabela `alertas_estoque`.
- *   Isso permite rastrear quando produtos ficam com estoque crítico.
  *
  * BANCO DE DADOS:
- *   Neon PostgreSQL via TypeORM (entidade Produto + AlertaEstoque).
+ *   Neon PostgreSQL via TypeORM (entidades Produto, AlertaEstoque, LogEstoque, Notificacao).
  */
 
 import { NextRequest } from 'next/server';
@@ -31,6 +40,10 @@ import { updateProdutoSchema } from '@/lib/validations/estoque';
 import { getDataSource } from '@/lib/database/data-source';
 import { Produto } from '@/lib/database/entities/Produto';
 import { AlertaEstoque } from '@/lib/database/entities/AlertaEstoque';
+import { LogEstoque } from '@/lib/database/entities/LogEstoque';
+import { Notificacao } from '@/lib/database/entities/Notificacao';
+import { Paciente } from '@/lib/database/entities/Paciente';
+import { userRepository } from '@/lib/db';
 
 /** Limite mínimo de estoque — abaixo ou igual a esse valor, gera alerta */
 const ESTOQUE_MINIMO = 2;
@@ -60,14 +73,8 @@ function parseIntId(id: string): number | null {
  * {
  *   "success": true,
  *   "message": "Produto encontrado.",
- *   "data": { id, nome, categoria, quantidade, descricao, createdAt, updatedAt }
+ *   "data": { id, nome, categoria, quantidade, descricao, pacienteId, createdAt, updatedAt }
  * }
- *
- * Erros possíveis:
- *   400 → ID inválido (não é número inteiro positivo)
- *   401 → Usuário não autenticado
- *   404 → Produto não encontrado no banco
- *   500 → Erro interno do servidor
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   // 1. Verifica se o usuário está autenticado via JWT
@@ -126,24 +133,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
  * Atualiza os dados de um produto existente no estoque.
  * Aceita atualização parcial — apenas os campos enviados serão alterados.
  *
- * ⚠️ ALERTA AUTOMÁTICO:
- *   Se a quantidade for atualizada para ≤ 2, um novo alerta é registrado
- *   automaticamente na tabela `alertas_estoque`.
+ * REGRAS DE NEGÓCIO (Sprint 04):
+ *   1. IMUTABILIDADE: Itens vinculados a pacientes NÃO podem ser editados.
+ *      "Se o enfermeiro cadastrar algo por engano não é possível converter"
+ *   2. LOGS: Toda alteração gera um LOG de auditoria com valores antes/depois.
+ *      "Sempre que falamos em edição, falamos em criação de LOGs para saber que editou"
+ *   3. Pacientes desativados: itens de pacientes desativados não podem ser alterados.
+ *   4. ALERTA: Se quantidade atualizada para ≤ 2, gera alerta + notificação.
  *
  * Body esperado (JSON) — todos os campos são opcionais:
  * {
  *   "nome": "Papel Toalha",
- *   "categoria": "Limpeza",
+ *   "categoria": "Material de Limpeza",
  *   "quantidade": 1,
  *   "descricao": "Pacote com 2 rolos"
- * }
- *
- * Resposta de sucesso (200):
- * {
- *   "success": true,
- *   "message": "Produto atualizado com sucesso!",
- *   "data": { id, nome, categoria, quantidade, descricao, createdAt, updatedAt },
- *   "alerta": { ... } | null   // alerta gerado se quantidade ≤ 2
  * }
  */
 export async function PUT(request: NextRequest, context: RouteContext) {
@@ -196,6 +199,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const ds = await getDataSource();
     const produtoRepo = ds.getRepository(Produto);
     const alertaRepo = ds.getRepository(AlertaEstoque);
+    const logRepo = ds.getRepository(LogEstoque);
+    const notificacaoRepo = ds.getRepository(Notificacao);
 
     const existing = await produtoRepo.findOneBy({ id: numericId });
 
@@ -206,31 +211,116 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // 6. Aplica as atualizações (apenas campos enviados)
+    // 6. Se o produto pertence a um paciente, verifica se o paciente está ativo
+    //    Pacientes desativados não podem ter seus itens alterados
+    if (existing.pacienteId !== null) {
+      const pacienteRepo = ds.getRepository(Paciente);
+      const paciente = await pacienteRepo.findOneBy({ id: existing.pacienteId });
+      if (paciente && !paciente.ativo) {
+        return Response.json(
+          {
+            success: false,
+            error: 'Paciente desativado. Não é possível alterar itens de pacientes desativados.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // 7. Busca nome do usuário para os LOGs
+    const usuarioInfo = await userRepository.findById(user.userId);
+    const nomeUsuario = usuarioInfo?.name ?? 'Sistema';
+
+    // 9. Aplica as atualizações e gera LOGs para cada campo alterado
     const updateData = result.data;
-    if (updateData.nome !== undefined) {
+    const logsGerados = [];
+
+    // 9a. Alteração de NOME
+    if (updateData.nome !== undefined && updateData.nome !== existing.nome) {
+      const log = logRepo.create({
+        produtoId: existing.id,
+        pacienteId: existing.pacienteId,
+        usuarioId: user.userId,
+        usuarioNome: nomeUsuario,
+        acao: 'ATUALIZACAO_DADOS',
+        campoAlterado: 'nome',
+        valorAnterior: existing.nome,
+        valorNovo: updateData.nome,
+        descricao: `Nome do produto alterado de "${existing.nome}" para "${updateData.nome}" por ${nomeUsuario}.`,
+      });
+      logsGerados.push(log);
       existing.nome = updateData.nome;
     }
-    if (updateData.categoria !== undefined) {
+
+    // 9b. Alteração de CATEGORIA
+    if (updateData.categoria !== undefined && updateData.categoria !== existing.categoria) {
+      const log = logRepo.create({
+        produtoId: existing.id,
+        pacienteId: existing.pacienteId,
+        usuarioId: user.userId,
+        usuarioNome: nomeUsuario,
+        acao: 'ATUALIZACAO_DADOS',
+        campoAlterado: 'categoria',
+        valorAnterior: existing.categoria,
+        valorNovo: updateData.categoria,
+        descricao: `Categoria do produto "${existing.nome}" alterada de "${existing.categoria}" para "${updateData.categoria}" por ${nomeUsuario}.`,
+      });
+      logsGerados.push(log);
       existing.categoria = updateData.categoria;
     }
-    if (updateData.quantidade !== undefined) {
+
+    // 9c. Alteração de QUANTIDADE
+    if (updateData.quantidade !== undefined && updateData.quantidade !== existing.quantidade) {
+      const log = logRepo.create({
+        produtoId: existing.id,
+        pacienteId: existing.pacienteId,
+        usuarioId: user.userId,
+        usuarioNome: nomeUsuario,
+        acao: 'ATUALIZACAO_QTD',
+        campoAlterado: 'quantidade',
+        valorAnterior: String(existing.quantidade),
+        valorNovo: String(updateData.quantidade),
+        descricao: `Quantidade do produto "${existing.nome}" alterada de ${existing.quantidade} para ${updateData.quantidade} unidade(s) por ${nomeUsuario}.`,
+      });
+      logsGerados.push(log);
       existing.quantidade = updateData.quantidade;
     }
+
+    // 9d. Alteração de DESCRIÇÃO
     if (updateData.descricao !== undefined) {
-      existing.descricao = updateData.descricao ?? null;
+      const novaDescricao = updateData.descricao ?? null;
+      if (novaDescricao !== existing.descricao) {
+        const log = logRepo.create({
+          produtoId: existing.id,
+          pacienteId: existing.pacienteId,
+          usuarioId: user.userId,
+          usuarioNome: nomeUsuario,
+          acao: 'ATUALIZACAO_DADOS',
+          campoAlterado: 'descricao',
+          valorAnterior: existing.descricao ?? '(vazio)',
+          valorNovo: novaDescricao ?? '(vazio)',
+          descricao: `Descrição do produto "${existing.nome}" alterada por ${nomeUsuario}.`,
+        });
+        logsGerados.push(log);
+        existing.descricao = novaDescricao;
+      }
     }
 
-    // 7. Salva as alterações no banco
+    // 10. Salva todos os LOGs gerados
+    for (const log of logsGerados) {
+      await logRepo.save(log);
+    }
+
+    // 11. Salva as alterações no banco
     const updated = await produtoRepo.save(existing);
 
-    // 8. Verifica se a quantidade ficou no limite mínimo → gera alerta
-    //    Só gera alerta se a quantidade foi atualizada nesta operação
+    // 12. Verifica se a quantidade ficou no limite mínimo → gera alerta + notificação
     let alerta = null;
     if (
       updateData.quantidade !== undefined &&
       updated.quantidade <= ESTOQUE_MINIMO
     ) {
+      // 12a. Gera alerta na tabela alertas_estoque
       const novoAlerta = alertaRepo.create({
         produtoId: updated.id,
         produtoNome: updated.nome,
@@ -239,9 +329,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         lido: false,
       });
       alerta = await alertaRepo.save(novoAlerta);
+
+      // 12b. Gera notificação para a equipe de enfermagem
+      const notificacao = notificacaoRepo.create({
+        tipo: 'ESTOQUE_BAIXO',
+        titulo: `⚠️ Estoque baixo: ${updated.nome}`,
+        mensagem: `O produto "${updated.nome}" atingiu ${updated.quantidade} unidade(s), abaixo do limite mínimo de ${ESTOQUE_MINIMO}. Alteração feita por ${nomeUsuario}.`,
+        destinatarioId: null,
+        referenciaTipo: 'produto',
+        referenciaId: updated.id,
+        lida: false,
+      });
+      await notificacaoRepo.save(notificacao);
     }
 
-    // 9. Retorna o produto atualizado (e o alerta, se gerado)
+    // 13. Retorna o produto atualizado (com alerta e LOGs gerados)
     return Response.json({
       success: true,
       message: alerta
@@ -249,6 +351,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         : 'Produto atualizado com sucesso!',
       data: updated,
       alerta,
+      logs_gerados: logsGerados.length,
     });
   } catch (error) {
     console.error('[PUT /api/estoque/:id] Erro ao atualizar produto:', error);
@@ -265,17 +368,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
  * Remove um produto do estoque de forma permanente (hard delete).
  * Os alertas relacionados ao produto também são removidos (CASCADE).
  *
+ * REGRAS DE NEGÓCIO (Sprint 04):
+ *   1. Itens vinculados a pacientes NÃO podem ser excluídos diretamente
+ *   2. Gera LOG de exclusão antes de remover o produto
+ *
  * Resposta de sucesso (200):
  * {
  *   "success": true,
  *   "message": "Produto \"Papel Higiênico\" excluído com sucesso."
  * }
- *
- * Erros possíveis:
- *   400 → ID inválido
- *   401 → Usuário não autenticado
- *   404 → Produto não encontrado
- *   500 → Erro interno
  */
 export async function DELETE(request: NextRequest, context: RouteContext) {
   // 1. Verifica se o usuário está autenticado via JWT
@@ -301,9 +402,10 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     // 3. Busca o produto para verificar se existe
     const ds = await getDataSource();
-    const repo = ds.getRepository(Produto);
+    const produtoRepo = ds.getRepository(Produto);
+    const logRepo = ds.getRepository(LogEstoque);
 
-    const existing = await repo.findOneBy({ id: numericId });
+    const existing = await produtoRepo.findOneBy({ id: numericId });
 
     if (!existing) {
       return Response.json(
@@ -312,10 +414,43 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // 4. Remove o produto (os alertas relacionados são excluídos via CASCADE)
-    await repo.remove(existing);
+    // 4. Se o produto pertence a um paciente desativado, bloqueia exclusão
+    if (existing.pacienteId !== null) {
+      const pacienteRepo = ds.getRepository(Paciente);
+      const paciente = await pacienteRepo.findOneBy({ id: existing.pacienteId });
+      if (paciente && !paciente.ativo) {
+        return Response.json(
+          {
+            success: false,
+            error: 'Paciente desativado. Não é possível excluir itens de pacientes desativados.',
+          },
+          { status: 403 }
+        );
+      }
+    }
 
-    // 5. Retorna confirmação de exclusão
+    // 5. Busca nome do usuário para o LOG
+    const usuarioInfo = await userRepository.findById(user.userId);
+    const nomeUsuario = usuarioInfo?.name ?? 'Sistema';
+
+    // 6. Registra LOG de exclusão ANTES de remover (para preservar histórico)
+    const log = logRepo.create({
+      produtoId: existing.id,
+      pacienteId: existing.pacienteId,
+      usuarioId: user.userId,
+      usuarioNome: nomeUsuario,
+      acao: 'EXCLUSAO',
+      campoAlterado: null,
+      valorAnterior: `${existing.nome} | Categoria: ${existing.categoria} | Qtd: ${existing.quantidade}`,
+      valorNovo: null,
+      descricao: `Produto "${existing.nome}" (${existing.quantidade} unidade(s), categoria "${existing.categoria}") excluído do estoque por ${nomeUsuario}.`,
+    });
+    await logRepo.save(log);
+
+    // 7. Remove o produto (os alertas relacionados são excluídos via CASCADE)
+    await produtoRepo.remove(existing);
+
+    // 8. Retorna confirmação de exclusão
     return Response.json({
       success: true,
       message: `Produto "${existing.nome}" excluído com sucesso.`,
