@@ -12,7 +12,7 @@
  *   - Adicionado schema para desativação de paciente
  *
  * REGRAS DE VALIDAÇÃO:
- *   - cpf: obrigatório, 11 dígitos, algoritmo de dígitos verificadores válido
+ *   - cpf: opcional; vazio, null ou ausente vira null. Se preenchido, 11 dígitos e dígitos verificadores válidos
  *   - nome_completo: obrigatório, entre 2 e 150 caracteres
  *   - data_nascimento: obrigatório, formato YYYY-MM-DD, não pode ser data futura
  *   - observacoes_medicas: opcional, máximo de 1000 caracteres
@@ -31,18 +31,23 @@ import { isValidCPF, sanitizeCPF } from './cpf';
  */
 export const createPacienteSchema = z.object({
   /**
-   * CPF do paciente — aceita formato com ou sem pontuação.
-   * Exemplos válidos: "123.456.789-09" ou "12345678909"
-   * A sanitização (remoção de pontos e traço) é feita automaticamente via transform.
+   * CPF do paciente — opcional.
+   * "", null ou ausência viram null. Texto preenchido é sanitizado
+   * (com ou sem pontuação) e validado pelo algoritmo dos dígitos verificadores.
    */
   cpf: z
-    .string({ message: 'O CPF é obrigatório' })
+    .string()
     .trim()
-    .transform((val) => sanitizeCPF(val))
-    .refine((val) => val.length === 11, {
+    .nullable()
+    .optional()
+    .transform((val): string | null => {
+      if (val == null || val === '') return null;
+      return sanitizeCPF(val);
+    })
+    .refine((val) => val === null || val.length === 11, {
       message: 'O CPF deve conter exatamente 11 dígitos numéricos',
     })
-    .refine((val) => isValidCPF(val), {
+    .refine((val) => val === null || isValidCPF(val), {
       message: 'CPF inválido. Verifique os dígitos informados.',
     }),
 

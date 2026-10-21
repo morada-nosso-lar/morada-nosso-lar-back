@@ -20,7 +20,7 @@
  *
  * CAMPOS:
  *   id               → INTEGER auto-increment (PK)
- *   produto_id       → INTEGER — FK para a tabela produtos
+ *   produto_id       → INTEGER nullable — FK para a tabela produtos (SET NULL ao excluir)
  *   paciente_id      → INTEGER nullable — FK para a tabela pacientes (quando aplicável)
  *   usuario_id       → INTEGER — ID do usuário que realizou a ação
  *   usuario_nome     → VARCHAR(100) — nome do usuário no momento da ação (snapshot)
@@ -47,9 +47,12 @@ export class LogEstoque {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  /** ID do produto afetado pela operação */
-  @Column({ type: 'int', name: 'produto_id' })
-  produtoId!: number;
+  /**
+   * ID do produto afetado pela operação.
+   * Fica nulo quando o produto é excluído (FK ON DELETE SET NULL).
+   */
+  @Column({ type: 'int', name: 'produto_id', nullable: true })
+  produtoId!: number | null;
 
   /** ID do paciente relacionado (quando a operação envolve estoque de paciente) */
   @Column({ type: 'int', name: 'paciente_id', nullable: true })

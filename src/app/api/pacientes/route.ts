@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
  *
  * Body esperado (JSON):
  * {
- *   "cpf": "123.456.789-09",           // obrigatório — aceita com ou sem formatação
+ *   "cpf": "123.456.789-09",           // opcional — vazio, null ou ausente viram null
  *   "nome_completo": "João da Silva",   // obrigatório
  *   "data_nascimento": "1950-03-15",    // obrigatório
  *   "observacoes_medicas": "Hipertenso" // opcional
@@ -163,16 +163,19 @@ export async function POST(request: NextRequest) {
     const pacienteRepo = ds.getRepository(Paciente);
     const notificacaoRepo = ds.getRepository(Notificacao);
 
-    // 4. Verifica se já existe um paciente com este CPF
-    const cpfExistente = await pacienteRepo.findOneBy({ cpf: result.data.cpf });
-    if (cpfExistente) {
-      return Response.json(
-        {
-          success: false,
-          error: `Já existe um paciente cadastrado com o CPF ${formatCPF(result.data.cpf)}.`,
-        },
-        { status: 409 }
-      );
+    // 4. Verifica duplicidade só quando o CPF foi informado.
+    //    Vários pacientes podem ficar com cpf nulo (UNIQUE do PostgreSQL permite).
+    if (result.data.cpf !== null) {
+      const cpfExistente = await pacienteRepo.findOneBy({ cpf: result.data.cpf });
+      if (cpfExistente) {
+        return Response.json(
+          {
+            success: false,
+            error: `Já existe um paciente cadastrado com o CPF ${formatCPF(result.data.cpf)}.`,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // 5. Cria e salva o paciente (começa sem itens no estoque)
@@ -194,7 +197,9 @@ export async function POST(request: NextRequest) {
     const notificacao = notificacaoRepo.create({
       tipo: 'SISTEMA',
       titulo: `Novo paciente cadastrado: ${savedPaciente.nomeCompleto}`,
-      mensagem: `O paciente "${savedPaciente.nomeCompleto}" (CPF: ${formatCPF(savedPaciente.cpf)}) foi cadastrado no sistema por ${nomeUsuario}.`,
+      mensagem: savedPaciente.cpf
+        ? `O paciente "${savedPaciente.nomeCompleto}" (CPF: ${formatCPF(savedPaciente.cpf)}) foi cadastrado no sistema por ${nomeUsuario}.`
+        : `O paciente "${savedPaciente.nomeCompleto}" foi cadastrado no sistema por ${nomeUsuario}.`,
       destinatarioId: null,  // Notificação para todos (broadcast)
       referenciaTipo: 'paciente',
       referenciaId: savedPaciente.id,

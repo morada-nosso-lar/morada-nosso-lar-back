@@ -50,8 +50,8 @@ export class Paciente {
    * A validação do algoritmo de dígitos verificadores é feita na camada de validação (Zod).
    * Possui constraint UNIQUE para evitar cadastros duplicados.
    */
-  @Column({ type: 'varchar', length: 11, unique: true })
-  cpf!: string;
+  @Column({ type: 'varchar', length: 11, unique: true, nullable: true })
+  cpf!: string | null;
 
   /** Nome completo do paciente */
   @Column({ type: 'varchar', length: 150, name: 'nome_completo' })

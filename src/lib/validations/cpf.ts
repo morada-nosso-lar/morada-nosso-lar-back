@@ -27,7 +27,8 @@
  * @param cpf - CPF em qualquer formato (com ou sem pontuação)
  * @returns Somente os dígitos numéricos do CPF
  */
-export function sanitizeCPF(cpf: string): string {
+export function sanitizeCPF(cpf: string | null | undefined): string {
+  if (!cpf) return '';
   return cpf.replace(/\D/g, '');
 }
 
@@ -37,7 +38,8 @@ export function sanitizeCPF(cpf: string): string {
  * @param cpf - CPF com 11 dígitos numéricos (já sanitizado)
  * @returns CPF formatado ou a string original se não tiver 11 dígitos
  */
-export function formatCPF(cpf: string): string {
+export function formatCPF(cpf: string | null | undefined): string {
+  if (!cpf) return '';
   const digits = sanitizeCPF(cpf);
   if (digits.length !== 11) return cpf;
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
