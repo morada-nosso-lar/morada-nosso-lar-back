@@ -5,11 +5,12 @@
  * ==============================================================================
  *
  * Endpoints:
- *   GET   /api/notificacoes/:id → Retorna uma notificação específica
- *   PATCH /api/notificacoes/:id → Marca a notificação como lida/não lida
+ *   GET    /api/notificacoes/:id → Retorna uma notificação específica
+ *   PATCH  /api/notificacoes/:id → Marca a notificação como lida/não lida
+ *   DELETE /api/notificacoes/:id → Exclui uma notificação
  *
  * AUTENTICAÇÃO:
- *   Ambos os endpoints exigem autenticação via JWT.
+ *   Todos os endpoints exigem autenticação via JWT.
  *
  * PARÂMETRO DINÂMICO:
  *   [id] — Número inteiro (ID auto-increment) da notificação.
@@ -178,6 +179,68 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     console.error('[PATCH /api/notificacoes/:id] Erro:', error);
     return Response.json(
       { success: false, error: 'Erro interno ao atualizar notificação.' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/notificacoes/:id
+ *
+ * Remove uma notificação de forma permanente.
+ *
+ * Resposta de sucesso (200):
+ * {
+ *   "success": true,
+ *   "message": "Notificação excluída com sucesso."
+ * }
+ */
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  // 1. Verifica autenticação
+  const user = getAuthenticatedUserFromRequest(request);
+  if (!user) {
+    return Response.json(
+      { success: false, error: 'Acesso negado. Faça login para continuar.' },
+      { status: 401 }
+    );
+  }
+
+  // 2. Extrai e valida o ID
+  const { id } = await context.params;
+  const numericId = parseIntId(id);
+
+  if (numericId === null) {
+    return Response.json(
+      { success: false, error: 'ID inválido. Esperado um número inteiro positivo.' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    // 3. Busca a notificação
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Notificacao);
+
+    const notificacao = await repo.findOneBy({ id: numericId });
+
+    if (!notificacao) {
+      return Response.json(
+        { success: false, error: 'Notificação não encontrada.' },
+        { status: 404 }
+      );
+    }
+
+    // 4. Remove a notificação
+    await repo.remove(notificacao);
+
+    return Response.json({
+      success: true,
+      message: 'Notificação excluída com sucesso.',
+    });
+  } catch (error) {
+    console.error('[DELETE /api/notificacoes/:id] Erro:', error);
+    return Response.json(
+      { success: false, error: 'Erro interno ao excluir notificação.' },
       { status: 500 }
     );
   }
