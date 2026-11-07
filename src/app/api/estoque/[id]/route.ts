@@ -45,9 +45,6 @@ import { Notificacao } from '@/lib/database/entities/Notificacao';
 import { Paciente } from '@/lib/database/entities/Paciente';
 import { userRepository } from '@/lib/db';
 
-/** Limite mínimo de estoque — abaixo ou igual a esse valor, gera alerta */
-const ESTOQUE_MINIMO = 2;
-
 // Tipo do contexto de rota com parâmetro dinâmico [id]
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -306,6 +303,26 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
+    // 9e. Alteração de ESTOQUE MÍNIMO PERSONALIZADO
+    const novoEstoqueMinimo = updateData.estoque_minimo ?? updateData.estoqueMinimo;
+    let estoqueMinimoAlterado = false;
+    if (novoEstoqueMinimo !== undefined && novoEstoqueMinimo !== existing.estoqueMinimo) {
+      estoqueMinimoAlterado = true;
+      const log = logRepo.create({
+        produtoId: existing.id,
+        pacienteId: existing.pacienteId,
+        usuarioId: user.userId,
+        usuarioNome: nomeUsuario,
+        acao: 'ATUALIZACAO_DADOS',
+        campoAlterado: 'estoque_minimo',
+        valorAnterior: String(existing.estoqueMinimo ?? 2),
+        valorNovo: String(novoEstoqueMinimo),
+        descricao: `Estoque mínimo personalizado do produto "${existing.nome}" alterado de ${existing.estoqueMinimo ?? 2} para ${novoEstoqueMinimo} por ${nomeUsuario}.`,
+      });
+      logsGerados.push(log);
+      existing.estoqueMinimo = novoEstoqueMinimo;
+    }
+
     // 10. Salva todos os LOGs gerados
     for (const log of logsGerados) {
       await logRepo.save(log);
@@ -314,18 +331,23 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     // 11. Salva as alterações no banco
     const updated = await produtoRepo.save(existing);
 
-    // 12. Verifica se a quantidade ficou no limite mínimo → gera alerta + notificação
+    // 12. Verifica se a quantidade está no limite mínimo personalizado → gera alerta + notificação
+    // Acompanha tanto alterações na quantidade quanto qualquer alteração no estoque mínimo!
     let alerta = null;
-    if (
-      updateData.quantidade !== undefined &&
-      updated.quantidade <= ESTOQUE_MINIMO
-    ) {
-      // 12a. Gera alerta na tabela alertas_estoque
+    const monitorarAlerta = updateData.quantidade !== undefined || estoqueMinimoAlterado;
+
+    if (monitorarAlerta && updated.quantidade <= updated.estoqueMinimo) {
+      const motivoDescritivo = estoqueMinimoAlterado && updateData.quantidade === undefined
+        ? `com novo estoque mínimo definido para ${updated.estoqueMinimo} unidade(s)`
+        : `atingiu ${updated.quantidade} unidade(s)`;
+
+      // 12a. Gera alerta na tabela alertas_estoque com snapshot do estoque mínimo atual
       const novoAlerta = alertaRepo.create({
         produtoId: updated.id,
         produtoNome: updated.nome,
         quantidade: updated.quantidade,
-        mensagem: `⚠️ ALERTA: O produto "${updated.nome}" atingiu ${updated.quantidade} unidade(s). Estoque abaixo do mínimo (${ESTOQUE_MINIMO}).`,
+        estoqueMinimo: updated.estoqueMinimo,
+        mensagem: `⚠️ ALERTA: O produto "${updated.nome}" ${motivoDescritivo}. Estoque abaixo ou igual ao mínimo personalizado (${updated.estoqueMinimo}).`,
         lido: false,
       });
       alerta = await alertaRepo.save(novoAlerta);
@@ -334,7 +356,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       const notificacao = notificacaoRepo.create({
         tipo: 'ESTOQUE_BAIXO',
         titulo: `⚠️ Estoque baixo: ${updated.nome}`,
-        mensagem: `O produto "${updated.nome}" atingiu ${updated.quantidade} unidade(s), abaixo do limite mínimo de ${ESTOQUE_MINIMO}. Alteração feita por ${nomeUsuario}.`,
+        mensagem: `O produto "${updated.nome}" possui ${updated.quantidade} unidade(s), atingindo o limite mínimo personalizado de ${updated.estoqueMinimo} unidade(s). Alteração feita por ${nomeUsuario}.`,
         destinatarioId: null,
         referenciaTipo: 'produto',
         referenciaId: updated.id,
@@ -347,7 +369,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return Response.json({
       success: true,
       message: alerta
-        ? `Produto atualizado com sucesso! ⚠️ Alerta: estoque baixo (${updated.quantidade} unidade(s)).`
+        ? `Produto atualizado com sucesso! ⚠️ Alerta: estoque baixo (${updated.quantidade} unidade(s), mínimo: ${updated.estoqueMinimo}).`
         : 'Produto atualizado com sucesso!',
       data: updated,
       alerta,
@@ -360,6 +382,16 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * PATCH /api/estoque/:id
+ *
+ * Atualização parcial rápida de um produto (ex: salvar estoque mínimo automaticamente).
+ * Reutiliza o mesmo fluxo e regras de negócio do PUT.
+ */
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  return PUT(request, context);
 }
 
 /**

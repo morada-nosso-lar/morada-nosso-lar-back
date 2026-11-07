@@ -61,6 +61,22 @@ export const createProdutoSchema = z.object({
     .int({ message: 'A quantidade deve ser um número inteiro' })
     .min(0, { message: 'A quantidade não pode ser negativa' }),
 
+  /**
+   * Quantidade mínima personalizada em estoque para emissão de alertas.
+   * Suporta tanto snake_case (estoque_minimo) quanto camelCase (estoqueMinimo).
+   */
+  estoque_minimo: z
+    .number({ message: 'O estoque mínimo deve ser um número' })
+    .int({ message: 'O estoque mínimo deve ser um número inteiro' })
+    .min(0, { message: 'O estoque mínimo não pode ser negativo' })
+    .optional(),
+
+  estoqueMinimo: z
+    .number({ message: 'O estoque mínimo deve ser um número' })
+    .int({ message: 'O estoque mínimo deve ser um número inteiro' })
+    .min(0, { message: 'O estoque mínimo não pode ser negativo' })
+    .optional(),
+
   /** Descrição adicional do produto (opcional, máximo 500 caracteres) */
   descricao: z
     .string()

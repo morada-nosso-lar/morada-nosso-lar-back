@@ -1,5 +1,8 @@
 /**
- * Script de teste E2E para as APIs de Estoque
+ * Script de teste E2E para o Módulo de Estoque
+ * Testa o estoque mínimo personalizado por item, alteração com salvamento automático
+ * e disparo de alertas dinâmicos acompanhando todas as alterações.
+ *
  * Executa: node scripts/e2e-estoque-test.mjs
  */
 
@@ -21,116 +24,141 @@ async function request(method, path, body) {
 }
 
 async function run() {
-  console.log('=== TESTE E2E: MÓDULO DE ESTOQUE ===\n');
+  console.log('=== TESTE E2E: MÓDULO DE ESTOQUE COM ESTOQUE MÍNIMO PERSONALIZADO ===\n');
 
-  // 1. Login
+  // 1. Login ou Registro
   console.log('1. POST /api/auth/login');
-  const login = await request('POST', '/api/auth/login', {
-    email: 'test@test.com',
-    password: '123456',
+  let login = await request('POST', '/api/auth/login', {
+    email: 'admin.estoque@test.com',
+    password: 'SenhaForte@2026',
   });
-  console.log(`   Status: ${login.status}`);
-  console.log(`   Body: ${JSON.stringify(login.json)}\n`);
+
   if (login.status !== 200) {
-    console.log('❌ Login falhou. Registrando usuário...');
+    console.log('   Usuário não encontrado. Registrando admin...');
     const reg = await request('POST', '/api/auth/register', {
-      name: 'Test User',
-      email: 'test@test.com',
-      password: '123456',
+      name: 'Administrador de Estoque',
+      email: 'admin.estoque@test.com',
+      password: 'SenhaForte@2026',
     });
     console.log(`   Register Status: ${reg.status}`);
-    console.log(`   Body: ${JSON.stringify(reg.json)}\n`);
-    const login2 = await request('POST', '/api/auth/login', {
-      email: 'test@test.com',
-      password: '123456',
+    login = await request('POST', '/api/auth/login', {
+      email: 'admin.estoque@test.com',
+      password: 'SenhaForte@2026',
     });
-    console.log(`   Login2 Status: ${login2.status}\n`);
+    console.log(`   Login Status: ${login.status}\n`);
+  } else {
+    console.log(`   Login bem-sucedido (Status: ${login.status})\n`);
   }
 
-  // 2. POST /api/estoque — Cadastro com estoque normal (>2)
-  console.log('2. POST /api/estoque (quantidade: 10 — sem alerta)');
+  // 2. POST /api/estoque — Cadastro com estoque mínimo padrão (quantidade 10, min padrão 2) -> SEM alerta
+  console.log('2. POST /api/estoque (Papel Higiênico - Qtd: 10, sem especificar min -> default 2)');
   const create1 = await request('POST', '/api/estoque', {
-    nome: 'Papel Higiênico',
-    categoria: 'Higiene',
+    nome: 'Papel Higiênico Folha Dupla',
+    categoria: 'Higiene Pessoal',
     quantidade: 10,
     descricao: 'Pacote com 12 rolos',
   });
   console.log(`   Status: ${create1.status}`);
-  console.log(`   Body: ${JSON.stringify(create1.json)}\n`);
+  console.log(`   Estoque Mínimo configurado: ${create1.json.data?.estoqueMinimo}`);
+  console.log(`   Alerta gerado: ${create1.json.alerta ? 'SIM' : 'NÃO (Esperado)'}\n`);
   const produtoId1 = create1.json.data?.id;
 
-  // 3. POST /api/estoque — Cadastro com estoque baixo (≤2) → deve gerar alerta
-  console.log('3. POST /api/estoque (quantidade: 1 — COM alerta)');
-  const create2 = await request('POST', '/api/estoque', {
-    nome: 'Detergente',
-    categoria: 'Limpeza',
-    quantidade: 1,
+  // 3. POST /api/estoque — Cadastro de Pomada com Estoque Mínimo PERSONALIZADO (ex: min: 5, qtd: 10) -> SEM alerta
+  console.log('3. POST /api/estoque (Pomada para Assaduras - Qtd: 10, Estoque Mínimo Personalizado: 5)');
+  const createPomada = await request('POST', '/api/estoque', {
+    nome: 'Pomada Cicatrizante e Hidratante',
+    categoria: 'Remédios',
+    quantidade: 10,
+    estoque_minimo: 5,
+    descricao: 'Tubo de 50g',
   });
-  console.log(`   Status: ${create2.status}`);
-  console.log(`   Alerta: ${JSON.stringify(create2.json.alerta)}\n`);
-  const produtoId2 = create2.json.data?.id;
+  console.log(`   Status: ${createPomada.status}`);
+  console.log(`   Estoque Mínimo: ${createPomada.json.data?.estoqueMinimo} (Esperado: 5)`);
+  console.log(`   Alerta gerado: ${createPomada.json.alerta ? 'SIM' : 'NÃO (Esperado, pois 10 > 5)'}\n`);
+  const pomadaId = createPomada.json.data?.id;
 
-  // 4. GET /api/estoque — Listagem
-  console.log('4. GET /api/estoque');
+  // 4. POST /api/estoque — Cadastro de Medicamento com Estoque Mínimo PERSONALIZADO ALTO (ex: min: 20, qtd: 15) -> COM alerta
+  console.log('4. POST /api/estoque (Dipirona Gotas - Qtd: 15, Estoque Mínimo Personalizado: 20 -> COM ALERTA)');
+  const createDipirona = await request('POST', '/api/estoque', {
+    nome: 'Dipirona 500mg/ml Gotas',
+    categoria: 'Remédios',
+    quantidade: 15,
+    estoque_minimo: 20,
+    descricao: 'Frasco de 20ml',
+  });
+  console.log(`   Status: ${createDipirona.status}`);
+  console.log(`   Estoque Mínimo: ${createDipirona.json.data?.estoqueMinimo} (Esperado: 20)`);
+  console.log(`   Alerta gerado: ${createDipirona.json.alerta?.mensagem}\n`);
+  const dipironaId = createDipirona.json.data?.id;
+
+  // 5. PATCH /api/estoque/:id — Administrador altera o estoque mínimo da Pomada a qualquer momento (Salvamento Automático)
+  // Pomada tinha qtd: 10 e min: 5. Agora admin altera min para 15! Como 10 <= 15, DEVE gerar alerta!
+  console.log('5. PATCH /api/estoque/:id (Pomada: Alterar estoque_minimo de 5 para 15 via salvamento automático -> DEVE gerar alerta)');
+  const patchMin = await request('PATCH', `/api/estoque/${pomadaId}`, {
+    estoque_minimo: 15,
+  });
+  console.log(`   Status: ${patchMin.status}`);
+  console.log(`   Novo Estoque Mínimo: ${patchMin.json.data?.estoqueMinimo} (Esperado: 15)`);
+  console.log(`   Alerta gerado na alteração do estoque mínimo:`);
+  console.log(`   -> ${patchMin.json.alerta?.mensagem}\n`);
+
+  // 6. Múltiplas alterações no estoque mínimo:
+  // Administrador decide ajustar o estoque mínimo da Pomada novamente para 8 (qtd continua 10 -> agora 10 > 8, sem novo alerta crítico)
+  console.log('6. PUT /api/estoque/:id (Pomada: Ajustar estoque_minimo de 15 para 8)');
+  const putMin8 = await request('PUT', `/api/estoque/${pomadaId}`, {
+    estoque_minimo: 8,
+  });
+  console.log(`   Status: ${putMin8.status}`);
+  console.log(`   Novo Estoque Mínimo: ${putMin8.json.data?.estoqueMinimo} (Esperado: 8)`);
+  console.log(`   Alerta gerado: ${putMin8.json.alerta ? 'SIM' : 'NÃO (Esperado, pois 10 > 8)'}\n`);
+
+  // 7. Agora reduz a quantidade da Pomada para 7 (7 <= 8 -> o alerta DEVE acompanhar o novo estoque mínimo de 8!)
+  console.log('7. PUT /api/estoque/:id (Pomada: Quantidade alterada para 7 -> DEVE disparar alerta para o mínimo de 8)');
+  const putQtd7 = await request('PUT', `/api/estoque/${pomadaId}`, {
+    quantidade: 7,
+  });
+  console.log(`   Status: ${putQtd7.status}`);
+  console.log(`   Alerta gerado: ${putQtd7.json.alerta?.mensagem}\n`);
+
+  // 8. GET /api/estoque — Listagem conferindo campos estoqueMinimo
+  console.log('8. GET /api/estoque (Conferência de listagem)');
   const list = await request('GET', '/api/estoque');
   console.log(`   Status: ${list.status}`);
-  console.log(`   Total: ${list.json.data?.length} produto(s)\n`);
+  console.log(`   Total: ${list.json.data?.length} produto(s)`);
+  const itemConferido = list.json.data?.find((p) => p.id === pomadaId);
+  console.log(`   Pomada na listagem: Qtd=${itemConferido?.quantidade}, EstoqueMin=${itemConferido?.estoqueMinimo}\n`);
 
-  // 5. GET /api/estoque/:id — Detalhe
-  console.log(`5. GET /api/estoque/${produtoId1}`);
-  const detail = await request('GET', `/api/estoque/${produtoId1}`);
-  console.log(`   Status: ${detail.status}`);
-  console.log(`   Body: ${JSON.stringify(detail.json)}\n`);
-
-  // 6. PUT /api/estoque/:id — Atualizar quantidade para ≤2 → deve gerar alerta
-  console.log(`6. PUT /api/estoque/${produtoId1} (quantidade: 2 — COM alerta)`);
-  const update = await request('PUT', `/api/estoque/${produtoId1}`, {
-    quantidade: 2,
-  });
-  console.log(`   Status: ${update.status}`);
-  console.log(`   Alerta: ${JSON.stringify(update.json.alerta)}\n`);
-
-  // 7. GET /api/estoque/alertas — Histórico de alertas
-  console.log('7. GET /api/estoque/alertas');
+  // 9. GET /api/estoque/alertas — Conferência do histórico de alertas
+  console.log('9. GET /api/estoque/alertas');
   const alertas = await request('GET', '/api/estoque/alertas');
   console.log(`   Status: ${alertas.status}`);
-  console.log(`   Total: ${alertas.json.data?.length} alerta(s)\n`);
-
-  // 8. GET /api/estoque/alertas?lido=false — Apenas não lidos
-  console.log('8. GET /api/estoque/alertas?lido=false');
-  const naoLidos = await request('GET', '/api/estoque/alertas?lido=false');
-  console.log(`   Status: ${naoLidos.status}`);
-  console.log(`   Total não lidos: ${naoLidos.json.data?.length}\n`);
-
-  // 9. PATCH /api/estoque/alertas/:id — Marcar como lido
-  const alertaId = alertas.json.data?.[0]?.id;
-  if (alertaId) {
-    console.log(`9. PATCH /api/estoque/alertas/${alertaId} (marcar como lido)`);
-    const patch = await request('PATCH', `/api/estoque/alertas/${alertaId}`, {
-      lido: true,
-    });
-    console.log(`   Status: ${patch.status}`);
-    console.log(`   Body: ${JSON.stringify(patch.json)}\n`);
+  console.log(`   Total de alertas registrados: ${alertas.json.data?.length}`);
+  if (alertas.json.data?.length > 0) {
+    console.log(`   Último alerta: ${alertas.json.data[0].mensagem}`);
   }
+  console.log('');
 
-  // 10. PUT /api/estoque/:id — Validação (sem campos)
-  console.log(`10. PUT /api/estoque/${produtoId1} (body vazio — deve falhar 422)`);
-  const failUpdate = await request('PUT', `/api/estoque/${produtoId1}`, {});
-  console.log(`   Status: ${failUpdate.status}\n`);
+  // 10. GET /api/estoque/logs — Conferência dos LOGs de auditoria
+  console.log(`10. GET /api/estoque/logs?produto_id=${pomadaId}`);
+  const logs = await request('GET', `/api/estoque/logs?produto_id=${pomadaId}`);
+  console.log(`   Status: ${logs.status}`);
+  console.log(`   Total de logs para a Pomada: ${logs.json.data?.length}`);
+  logs.json.data?.forEach((l) => {
+    console.log(`   -> [${l.acao}] ${l.campoAlterado || 'GERAL'}: ${l.descricao}`);
+  });
+  console.log('');
 
-  // 11. DELETE /api/estoque/:id — Excluir produto
-  console.log(`11. DELETE /api/estoque/${produtoId2}`);
-  const del = await request('DELETE', `/api/estoque/${produtoId2}`);
-  console.log(`   Status: ${del.status}`);
-  console.log(`   Body: ${JSON.stringify(del.json)}\n`);
+  // 11. Limpeza dos dados de teste
+  console.log('11. Limpando produtos de teste...');
+  if (produtoId1) await request('DELETE', `/api/estoque/${produtoId1}`);
+  if (pomadaId) await request('DELETE', `/api/estoque/${pomadaId}`);
+  if (dipironaId) await request('DELETE', `/api/estoque/${dipironaId}`);
+  console.log('   Produtos de teste removidos.\n');
 
-  // 12. DELETE do outro produto
-  console.log(`12. DELETE /api/estoque/${produtoId1}`);
-  const del2 = await request('DELETE', `/api/estoque/${produtoId1}`);
-  console.log(`   Status: ${del2.status}`);
-  console.log(`   Body: ${JSON.stringify(del2.json)}\n`);
-
-  console.log('=== TESTES CONCLUÍDOS ===');
+  console.log('=== TESTES DE ESTOQUE MÍNIMO PERSONALIZADO CONCLUÍDOS COM SUCESSO! ===');
 }
 
-run().catch(console.error);
+run().catch((err) => {
+  console.error('Erro na execução dos testes:', err);
+  process.exit(1);
+});

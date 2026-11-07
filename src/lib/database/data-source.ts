@@ -32,10 +32,11 @@ import { Configuracao } from './entities/Configuracao';
 neonConfig.webSocketConstructor = ws;
 
 /**
- * Singleton para preservar a conexão durante hot-reload do Next.js.
+ * Singleton para preservar a conexão durante hot-reload do Next.js e em produção.
  */
 const globalForDb = globalThis as unknown as {
   _typeormDataSource?: DataSource;
+  _typeormInitPromise?: Promise<DataSource>;
 };
 
 /**
@@ -71,20 +72,24 @@ function createDataSource(): DataSource {
 
 /**
  * Retorna uma instância inicializada do DataSource.
- * Reutiliza conexão existente via globalThis para hot-reload.
+ * Reutiliza conexão existente via globalThis garantindo singleton seguro.
  */
 export async function getDataSource(): Promise<DataSource> {
   if (globalForDb._typeormDataSource?.isInitialized) {
     return globalForDb._typeormDataSource;
   }
 
-  const ds = createDataSource();
-  await ds.initialize();
-  console.log('[TypeORM] Conexão com Neon estabelecida via WebSocket.');
-
-  if (process.env.NODE_ENV !== 'production') {
-    globalForDb._typeormDataSource = ds;
+  if (globalForDb._typeormInitPromise) {
+    return globalForDb._typeormInitPromise;
   }
 
-  return ds;
+  globalForDb._typeormInitPromise = (async () => {
+    const ds = createDataSource();
+    await ds.initialize();
+    console.log('[TypeORM] Conexão com Neon estabelecida via WebSocket.');
+    globalForDb._typeormDataSource = ds;
+    return ds;
+  })();
+
+  return globalForDb._typeormInitPromise;
 }

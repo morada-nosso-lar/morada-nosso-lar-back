@@ -41,6 +41,10 @@ export class AlertaEstoque {
   @Column({ type: 'int' })
   quantidade!: number;
 
+  /** Quantidade mínima personalizada configurada para o produto no momento do alerta */
+  @Column({ type: 'int', name: 'estoque_minimo', nullable: true })
+  estoqueMinimo!: number | null;
+
   @Column({ type: 'text' })
   mensagem!: string;
 

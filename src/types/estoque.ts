@@ -25,6 +25,7 @@ export interface Produto {
   nome: string;               // Nome do produto/suprimento (obrigatório)
   categoria: string;          // Categoria do produto (lista pré-definida)
   quantidade: number;         // Quantidade disponível em estoque
+  estoqueMinimo: number;      // Quantidade mínima personalizada para alertas
   descricao: string | null;   // Descrição adicional (opcional)
   pacienteId: number | null;  // ID do paciente vinculado (null = estoque geral)
   createdAt: Date;            // Timestamp de criação
@@ -38,6 +39,8 @@ export interface CreateProdutoInput {
   nome: string;
   categoria: string;
   quantidade: number;
+  estoque_minimo?: number;
+  estoqueMinimo?: number;
   descricao?: string | null;
   pacienteId?: number | null;
 }
@@ -51,18 +54,21 @@ export interface UpdateProdutoInput {
   nome?: string;
   categoria?: string;
   quantidade?: number;
+  estoque_minimo?: number;
+  estoqueMinimo?: number;
   descricao?: string | null;
 }
 
 /**
  * Representa um alerta de estoque baixo.
- * Gerado automaticamente quando a quantidade de um produto atinge ≤ 2 unidades.
+ * Gerado automaticamente quando a quantidade de um produto atinge o estoque mínimo personalizado.
  */
 export interface AlertaEstoque {
   id: number;
   produtoId: number;
   produtoNome: string;        // Nome do produto no momento do alerta (snapshot)
   quantidade: number;         // Quantidade no momento do alerta
+  estoqueMinimo?: number | null; // Limite mínimo no momento do alerta
   mensagem: string;           // Mensagem descritiva do alerta
   lido: boolean;              // Se o alerta já foi visualizado/resolvido
   createdAt: Date;
@@ -78,7 +84,7 @@ export interface AlertaEstoque {
  */
 export interface LogEstoque {
   id: number;
-  produtoId: number;           // ID do produto afetado
+  produtoId: number | null;    // ID do produto afetado (null se excluído)
   pacienteId: number | null;   // ID do paciente relacionado (se aplicável)
   usuarioId: number;           // ID do usuário que fez a ação
   usuarioNome: string;         // Nome do usuário (snapshot)

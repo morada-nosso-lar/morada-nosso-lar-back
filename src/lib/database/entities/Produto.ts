@@ -57,6 +57,14 @@ export class Produto {
   @Column({ type: 'int', default: 0 })
   quantidade!: number;
 
+  /**
+   * Quantidade mínima personalizada em estoque para emissão de alertas.
+   * Cada produto pode ter um limite diferente (ex: pomada vs medicamento).
+   * Padrão: 2 unidades.
+   */
+  @Column({ type: 'int', name: 'estoque_minimo', default: 2 })
+  estoqueMinimo!: number;
+
   /** Descrição adicional do produto (campo livre, opcional) */
   @Column({ type: 'text', nullable: true })
   descricao!: string | null;

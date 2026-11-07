@@ -34,10 +34,11 @@ import { AlertaEstoque } from '@/lib/database/entities/AlertaEstoque';
 import { LogEstoque } from '@/lib/database/entities/LogEstoque';
 import { Notificacao } from '@/lib/database/entities/Notificacao';
 import { Paciente } from '@/lib/database/entities/Paciente';
+import { Configuracao } from '@/lib/database/entities/Configuracao';
 import { userRepository } from '@/lib/db';
 
-/** Limite mínimo de estoque — abaixo ou igual a esse valor, gera alerta */
-const ESTOQUE_MINIMO = 2;
+/** Limite mínimo de estoque padrão caso nenhum valor seja informado */
+const DEFAULT_ESTOQUE_MINIMO = 2;
 
 /**
  * GET /api/estoque
@@ -212,19 +213,35 @@ export async function POST(request: NextRequest) {
     const usuarioInfo = await userRepository.findById(user.userId);
     const nomeUsuario = usuarioInfo?.name ?? 'Sistema';
 
-    // 7. Cria o novo produto com os dados validados
+    // 7. Determina o estoque mínimo personalizado do produto
+    let estoqueMinimo = result.data.estoque_minimo ?? result.data.estoqueMinimo;
+    if (estoqueMinimo === undefined) {
+      try {
+        const configRepo = ds.getRepository(Configuracao);
+        const config = await configRepo.findOneBy({ chave: 'estoque_minimo' });
+        if (config && !isNaN(parseInt(config.valor, 10))) {
+          estoqueMinimo = parseInt(config.valor, 10);
+        }
+      } catch {
+        // Fallback para o valor padrão constante
+      }
+    }
+    const estoqueMinimoFinal = estoqueMinimo !== undefined ? estoqueMinimo : DEFAULT_ESTOQUE_MINIMO;
+
+    // 8. Cria o novo produto com os dados validados
     const newProduto = produtoRepo.create({
       nome: result.data.nome,
       categoria: result.data.categoria,
       quantidade: result.data.quantidade,
+      estoqueMinimo: estoqueMinimoFinal,
       descricao: result.data.descricao ?? null,
       pacienteId: pacienteId,
     });
 
-    // 8. Salva o produto no banco de dados
+    // 9. Salva o produto no banco de dados
     const saved = await produtoRepo.save(newProduto);
 
-    // 9. Registra LOG de auditoria para a criação
+    // 10. Registra LOG de auditoria para a criação
     const log = logRepo.create({
       produtoId: saved.id,
       pacienteId: pacienteId,
@@ -233,29 +250,30 @@ export async function POST(request: NextRequest) {
       acao: 'CRIACAO',
       campoAlterado: null,
       valorAnterior: null,
-      valorNovo: `${saved.nome} | Categoria: ${saved.categoria} | Qtd: ${saved.quantidade}`,
-      descricao: `Produto "${saved.nome}" cadastrado por ${nomeUsuario} com ${saved.quantidade} unidade(s) na categoria "${saved.categoria}".`,
+      valorNovo: `${saved.nome} | Categoria: ${saved.categoria} | Qtd: ${saved.quantidade} | Estoque Mín: ${saved.estoqueMinimo}`,
+      descricao: `Produto "${saved.nome}" cadastrado por ${nomeUsuario} com ${saved.quantidade} unidade(s) na categoria "${saved.categoria}" e estoque mínimo de ${saved.estoqueMinimo} unidade(s).`,
     });
     await logRepo.save(log);
 
-    // 10. Verifica se a quantidade está no limite mínimo → gera alerta + notificação
+    // 11. Verifica se a quantidade está no limite mínimo personalizado → gera alerta + notificação
     let alerta = null;
-    if (saved.quantidade <= ESTOQUE_MINIMO) {
-      // 10a. Gera alerta na tabela alertas_estoque
+    if (saved.quantidade <= saved.estoqueMinimo) {
+      // 11a. Gera alerta na tabela alertas_estoque com snapshot do estoque mínimo personalizado
       const novoAlerta = alertaRepo.create({
         produtoId: saved.id,
         produtoNome: saved.nome,
         quantidade: saved.quantidade,
-        mensagem: `⚠️ ALERTA: O produto "${saved.nome}" foi cadastrado com apenas ${saved.quantidade} unidade(s). Estoque abaixo do mínimo (${ESTOQUE_MINIMO}).`,
+        estoqueMinimo: saved.estoqueMinimo,
+        mensagem: `⚠️ ALERTA: O produto "${saved.nome}" foi cadastrado com apenas ${saved.quantidade} unidade(s). Estoque abaixo ou igual ao mínimo personalizado (${saved.estoqueMinimo}).`,
         lido: false,
       });
       alerta = await alertaRepo.save(novoAlerta);
 
-      // 10b. Gera notificação para a equipe de enfermagem
+      // 11b. Gera notificação para a equipe de enfermagem
       const notificacao = notificacaoRepo.create({
         tipo: 'ESTOQUE_BAIXO',
         titulo: `⚠️ Estoque baixo: ${saved.nome}`,
-        mensagem: `O produto "${saved.nome}" foi cadastrado com apenas ${saved.quantidade} unidade(s), abaixo do limite mínimo de ${ESTOQUE_MINIMO}. Por favor, providencie a reposição.`,
+        mensagem: `O produto "${saved.nome}" foi cadastrado com apenas ${saved.quantidade} unidade(s), abaixo ou igual ao limite mínimo personalizado de ${saved.estoqueMinimo}. Por favor, providencie a reposição.`,
         destinatarioId: null,  // Broadcast para toda equipe
         referenciaTipo: 'produto',
         referenciaId: saved.id,
