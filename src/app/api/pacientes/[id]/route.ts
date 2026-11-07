@@ -217,6 +217,35 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       existing.observacoesMedicas = updateData.observacoes_medicas ?? null;
     }
 
+    // Telefones e dados de contato do familiar
+    const rawTelefones =
+      updateData.telefones_familiar ??
+      updateData.telefone_familiar ??
+      updateData.telefonesFamiliar ??
+      updateData.telefoneFamiliar;
+
+    if (rawTelefones !== undefined) {
+      if (rawTelefones === null) {
+        existing.telefonesFamiliar = null;
+      } else if (Array.isArray(rawTelefones)) {
+        const itens = rawTelefones.map((t) => t.trim()).filter((t) => t.length > 0);
+        existing.telefonesFamiliar = itens.length > 0 ? itens.join(', ') : null;
+      } else if (typeof rawTelefones === 'string') {
+        const trimVal = rawTelefones.trim();
+        existing.telefonesFamiliar = trimVal.length > 0 ? trimVal : null;
+      }
+    }
+
+    const rawNomeFamiliar = updateData.nome_familiar ?? updateData.nomeFamiliar;
+    if (rawNomeFamiliar !== undefined) {
+      existing.nomeFamiliar = rawNomeFamiliar ? rawNomeFamiliar.trim() : null;
+    }
+
+    const rawParentesco = updateData.parentesco_familiar ?? updateData.parentescoFamiliar;
+    if (rawParentesco !== undefined) {
+      existing.parentescoFamiliar = rawParentesco ? rawParentesco.trim() : null;
+    }
+
     const updated = await repo.save(existing);
 
     return Response.json({

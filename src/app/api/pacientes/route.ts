@@ -178,12 +178,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Cria e salva o paciente (começa sem itens no estoque)
+    // 4b. Trata telefones e dados de contato do familiar (suporta array ou string)
+    const rawTelefones =
+      result.data.telefones_familiar ??
+      result.data.telefone_familiar ??
+      result.data.telefonesFamiliar ??
+      result.data.telefoneFamiliar;
+
+    let telefonesFamiliarFormatado: string | null = null;
+    if (rawTelefones) {
+      if (Array.isArray(rawTelefones)) {
+        const itens = rawTelefones.map((t) => t.trim()).filter((t) => t.length > 0);
+        telefonesFamiliarFormatado = itens.length > 0 ? itens.join(', ') : null;
+      } else if (typeof rawTelefones === 'string') {
+        const trimVal = rawTelefones.trim();
+        telefonesFamiliarFormatado = trimVal.length > 0 ? trimVal : null;
+      }
+    }
+
+    const nomeFamiliar = result.data.nome_familiar ?? result.data.nomeFamiliar ?? null;
+    const parentescoFamiliar = result.data.parentesco_familiar ?? result.data.parentescoFamiliar ?? null;
+
+    // 5. Cria e salva o paciente (com telefones e dados do familiar)
     const newPaciente = pacienteRepo.create({
       cpf: result.data.cpf,
       nomeCompleto: result.data.nome_completo,
       dataNascimento: result.data.data_nascimento,
       observacoesMedicas: result.data.observacoes_medicas ?? null,
+      telefonesFamiliar: telefonesFamiliarFormatado,
+      nomeFamiliar: nomeFamiliar ? nomeFamiliar.trim() : null,
+      parentescoFamiliar: parentescoFamiliar ? parentescoFamiliar.trim() : null,
       ativo: true,  // Paciente começa como ativo
     });
 

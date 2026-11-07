@@ -49,6 +49,25 @@ function logResult(testNum, name, status, expected, passed) {
   console.log(`   Status: ${status} (Esperado: ${expected})`);
 }
 
+function generateValidCPF() {
+  const digits = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+  let sum1 = 0;
+  for (let i = 0; i < 9; i++) sum1 += digits[i] * (10 - i);
+  let d1 = (sum1 * 10) % 11;
+  if (d1 === 10) d1 = 0;
+  digits.push(d1);
+
+  let sum2 = 0;
+  for (let i = 0; i < 10; i++) sum2 += digits[i] * (11 - i);
+  let d2 = (sum2 * 10) % 11;
+  if (d2 === 10) d2 = 0;
+  digits.push(d2);
+
+  return digits.join('');
+}
+
+const cpfTeste = generateValidCPF();
+
 async function run() {
   console.log('🚀 Iniciando testes E2E — Sprint 04 (Backend Completo)\n');
   console.log('='.repeat(60));
@@ -126,19 +145,22 @@ async function run() {
   console.log(`   Erro: ${cpfInvalidoData.error}`);
   if (cpfInvalidoRes.status !== 422) throw new Error('Falha no Teste 4: CPF inválido aceito');
 
-  // TESTE 5: Cadastrar paciente com CPF VÁLIDO (deve criar + 3 itens padrão)
-  console.log('\n[TESTE 5] POST /api/pacientes (CPF Válido + 3 Itens Padrão)');
+  // TESTE 5: Cadastrar paciente com CPF VÁLIDO e telefones do familiar
+  console.log('\n[TESTE 5] POST /api/pacientes (CPF Válido + Telefones do Familiar)');
   const pacRes = await authFetch(`${BASE_URL}/api/pacientes`, {
     method: 'POST',
     body: JSON.stringify({
-      cpf: '529.982.247-25',  // CPF válido para testes
+      cpf: cpfTeste,  // CPF válido e único gerado para cada execução
       nome_completo: 'Maria da Silva Santos',
       data_nascimento: '1945-06-15',
       observacoes_medicas: 'Hipertensa, usa losartana 50mg diariamente.',
+      telefones_familiar: ['(11) 98765-4321', '(11) 3214-5555'],
+      nome_familiar: 'Carlos Santos',
+      parentesco_familiar: 'Filho',
     }),
   });
   const pacData = await pacRes.json();
-  logResult(5, 'Cadastrar paciente com CPF válido', pacRes.status, 201, pacRes.status === 201);
+  logResult(5, 'Cadastrar paciente com telefones do familiar', pacRes.status, 201, pacRes.status === 201);
   if (pacRes.status !== 201) {
     console.log(`   Erro: ${pacData.error}`);
     throw new Error('Falha no Teste 5: Cadastro de paciente');
@@ -146,6 +168,8 @@ async function run() {
   pacienteId = pacData.data.id;
   console.log(`   Paciente ID: ${pacienteId}`);
   console.log(`   CPF: ${pacData.data.cpf}`);
+  console.log(`   Telefones do Familiar: ${pacData.data.telefonesFamiliar}`);
+  console.log(`   Familiar: ${pacData.data.nomeFamiliar} (${pacData.data.parentescoFamiliar})`);
   console.log(`   Paciente começa sem itens no estoque (serão adicionados manualmente)`);
 
   // TESTE 6: Tentar cadastrar com CPF duplicado
@@ -153,7 +177,7 @@ async function run() {
   const cpfDupRes = await authFetch(`${BASE_URL}/api/pacientes`, {
     method: 'POST',
     body: JSON.stringify({
-      cpf: '529.982.247-25',
+      cpf: cpfTeste,
       nome_completo: 'Outra Pessoa',
       data_nascimento: '1960-01-01',
     }),
@@ -176,6 +200,7 @@ async function run() {
   const pacDetalheData = await pacDetalheRes.json();
   logResult(8, 'Buscar paciente com produtos', pacDetalheRes.status, 200, pacDetalheRes.status === 200);
   console.log(`   Nome: ${pacDetalheData.data?.nomeCompleto}`);
+  console.log(`   Telefones do Familiar: ${pacDetalheData.data?.telefonesFamiliar}`);
   console.log(`   Produtos vinculados: ${pacDetalheData.data?.produtos?.length}`);
 
   // =========================================================================

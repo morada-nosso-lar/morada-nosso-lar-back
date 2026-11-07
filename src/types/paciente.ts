@@ -28,6 +28,9 @@ export interface Paciente {
   nomeCompleto: string;                 // Nome completo do paciente (obrigatório)
   dataNascimento: string;               // Data de nascimento no formato ISO (YYYY-MM-DD)
   observacoesMedicas: string | null;    // Observações médicas (opcional)
+  telefonesFamiliar: string | null;     // Telefones do familiar (ex: celular e fixo)
+  nomeFamiliar: string | null;          // Nome do familiar de contato (opcional)
+  parentescoFamiliar: string | null;    // Parentesco do familiar (opcional)
   ativo: boolean;                       // Se o paciente está ativo no sistema
   dataDesativacao: Date | null;         // Data/hora da desativação (null se ativo)
   motivoDesativacao: string | null;     // Motivo da desativação (null se ativo)
@@ -44,6 +47,10 @@ export interface CreatePacienteInput {
   nomeCompleto: string;
   dataNascimento: string;
   observacoesMedicas?: string | null;
+  telefonesFamiliar?: string | string[] | null;
+  telefoneFamiliar?: string | string[] | null;
+  nomeFamiliar?: string | null;
+  parentescoFamiliar?: string | null;
 }
 
 /**
@@ -55,6 +62,10 @@ export interface UpdatePacienteInput {
   nomeCompleto?: string;
   dataNascimento?: string;
   observacoesMedicas?: string | null;
+  telefonesFamiliar?: string | string[] | null;
+  telefoneFamiliar?: string | string[] | null;
+  nomeFamiliar?: string | null;
+  parentescoFamiliar?: string | null;
 }
 
 /**

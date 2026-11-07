@@ -89,6 +89,73 @@ export const createPacienteSchema = z.object({
     .max(1000, { message: 'As observações não podem exceder 1000 caracteres' })
     .nullable()
     .optional(),
+
+  /**
+   * Telefones do familiar ou responsável pelo paciente (opcional).
+   * Aceita string (ex: "(11) 98765-4321, (11) 3333-4444") ou array de strings.
+   */
+  telefones_familiar: z
+    .union([
+      z.string().trim().max(255, { message: 'Os telefones do familiar não podem exceder 255 caracteres' }),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  /** Alias no singular */
+  telefone_familiar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  telefonesFamiliar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  telefoneFamiliar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  /** Nome do familiar ou responsável de contato (opcional) */
+  nome_familiar: z
+    .string()
+    .trim()
+    .max(150, { message: 'O nome do familiar não pode exceder 150 caracteres' })
+    .nullable()
+    .optional(),
+
+  nomeFamiliar: z
+    .string()
+    .trim()
+    .max(150, { message: 'O nome do familiar não pode exceder 150 caracteres' })
+    .nullable()
+    .optional(),
+
+  /** Grau de parentesco do familiar com o paciente (opcional) */
+  parentesco_familiar: z
+    .string()
+    .trim()
+    .max(100, { message: 'O parentesco não pode exceder 100 caracteres' })
+    .nullable()
+    .optional(),
+
+  parentescoFamiliar: z
+    .string()
+    .trim()
+    .max(100, { message: 'O parentesco não pode exceder 100 caracteres' })
+    .nullable()
+    .optional(),
 });
 
 /**
@@ -135,6 +202,66 @@ export const updatePacienteSchema = z.object({
     .string()
     .trim()
     .max(1000, { message: 'As observações não podem exceder 1000 caracteres' })
+    .nullable()
+    .optional(),
+
+  telefones_familiar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  telefone_familiar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  telefonesFamiliar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  telefoneFamiliar: z
+    .union([
+      z.string().trim().max(255),
+      z.array(z.string().trim()),
+    ])
+    .nullable()
+    .optional(),
+
+  nome_familiar: z
+    .string()
+    .trim()
+    .max(150)
+    .nullable()
+    .optional(),
+
+  nomeFamiliar: z
+    .string()
+    .trim()
+    .max(150)
+    .nullable()
+    .optional(),
+
+  parentesco_familiar: z
+    .string()
+    .trim()
+    .max(100)
+    .nullable()
+    .optional(),
+
+  parentescoFamiliar: z
+    .string()
+    .trim()
+    .max(100)
     .nullable()
     .optional(),
 }).refine(

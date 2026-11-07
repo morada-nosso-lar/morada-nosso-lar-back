@@ -66,6 +66,21 @@ export class Paciente {
   observacoesMedicas!: string | null;
 
   /**
+   * Telefones do familiar ou responsável pelo paciente.
+   * Pode conter múltiplos números (ex: "(11) 98765-4321, (11) 3333-4444").
+   */
+  @Column({ type: 'text', name: 'telefones_familiar', nullable: true })
+  telefonesFamiliar!: string | null;
+
+  /** Nome do familiar ou responsável de contato (opcional) */
+  @Column({ type: 'varchar', length: 150, name: 'nome_familiar', nullable: true })
+  nomeFamiliar!: string | null;
+
+  /** Grau de parentesco do familiar com o paciente (ex: Filho(a), Cônjuge, Irmão(ã)) */
+  @Column({ type: 'varchar', length: 100, name: 'parentesco_familiar', nullable: true })
+  parentescoFamiliar!: string | null;
+
+  /**
    * Indica se o paciente está ativo no sistema.
    * Pacientes desativados:
    *   - Não podem receber novas movimentações de estoque
